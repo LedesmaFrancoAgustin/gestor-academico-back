@@ -1,6 +1,39 @@
 import express from "express";
 import "dotenv/config";
 import cors from "cors";
+
+import { errorHandler } from "./middlewares/errorHandler.js";
+import connectMongoDB from "./db/connection-mongo.js";
+import managerRouter from "./routes/routes.manager.js";
+
+const app = express();
+
+// 🔹 Conectar DB (importante: una sola vez)
+connectMongoDB();
+
+// 🔹 CORS
+app.use(cors({
+  origin: "https://gestor-academico-front.vercel.app/",
+  exposedHeaders: ["Authorization", "Content-Disposition"]
+}));
+
+// 🔹 Middlewares
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 🔹 Rutas
+app.use("/api", managerRouter);
+
+// 🔹 Error handler
+app.use(errorHandler);
+
+// 🚀 EXPORTAR APP (CLAVE PARA VERCEL)
+export default app;
+
+/*
+import express from "express";
+import "dotenv/config";
+import cors from "cors";
 //import path from "path";
 
 import { __dirname } from "./utils.js";
@@ -27,6 +60,9 @@ app.use(errorHandler);
 
 
 connectMongoDB();
+
+
 app.listen(PORT, () => {
   console.log("Servidor corriendo en puerto", PORT);
 });
+*/
