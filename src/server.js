@@ -13,7 +13,7 @@ connectMongoDB();
 
 // 🔹 CORS
 app.use(cors({
-  origin: "https://gestor-academico-front.vercel.app/",
+  origin: "https://gestor-academico-front.vercel.app",
   exposedHeaders: ["Authorization", "Content-Disposition"]
 }));
 
