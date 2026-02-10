@@ -56,6 +56,12 @@ router.get(
   controller.getCourseSubjects
 );
 
+router.get(
+  "/:year/year",
+  authToken,
+  authorizeRoles("superAdmin", "admin"),
+  controller.getCourseYear
+);
 
 router.put(
   "/:id",

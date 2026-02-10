@@ -168,175 +168,191 @@ async getCursoActive({ page = 1, limit = 50, q = "" }) {
     role
   };
 }
-async addStudentToCourse(courseId, studentId) {
-  const course = await Course.findById(courseId);
-  if (!course) {
-    throw new Error("Curso no encontrado");
-  }
-
-  // Verificar si el estudiante ya está en el curso
-  const alreadyAdded = course.students.some(
-    s => s.student.toString() === studentId
-  );
-
-  if (alreadyAdded) {
-    throw new Error("El estudiante ya está agregado a este curso");
-  }
-
-  // Agregar estudiante
-  await Course.updateOne(
-  { _id: courseId },
-  {
-    $push: {
-      students: { student: studentId, active: true }
+  async addStudentToCourse(courseId, studentId) {
+    const course = await Course.findById(courseId);
+    if (!course) {
+      throw new Error("Curso no encontrado");
     }
-  }
-  
-);
 
- await User.updateOne(
-    { _id: studentId },
-    {
-      $push: {
-        courses: {
-          course: courseId,
-          status: "activo",
-          from: new Date()
-        }
-      }
+    // Verificar si el estudiante ya está en el curso
+    const alreadyAdded = course.students.some(
+      s => s.student.toString() === studentId
+    );
+
+    if (alreadyAdded) {
+      throw new Error("El estudiante ya está agregado a este curso");
     }
-  );
 
-
-  return {
-    courseId: course._id,
-    studentId
-  };
-}
-
-async addSubjectToCourse(courseId, { subjectId, teacherId = null }) {
-  // ⚠️ Verificar que exista el curso
-  const course = await Course.findById(courseId);
-  if (!course) throw new Error("Curso no encontrado");
-
-  // ⚠️ Evitar duplicados
-  const alreadyAssigned = course.subjects.some(
-    (s) => s.subject && s.subject.toString() === subjectId
-  );
-  if (alreadyAssigned) throw new Error("La materia ya está asignada al curso");
-
-  // ✅ Update atómico
-  await Course.updateOne(
+    // Agregar estudiante
+    await Course.updateOne(
     { _id: courseId },
     {
       $push: {
-        subjects: { subject: subjectId, teacher: teacherId }
+        students: { student: studentId, active: true }
       }
     }
+    
   );
 
-  return {
-    courseId: course._id,
-    subjectId,
-    teacherId
-  };
-}
-async getCourseUsers(courseId) {
-  const course = await Course.findById(courseId)
-    .select("users")
-    .populate("users.user", "nombre apellido email dni rol activo courses");
+  await User.updateOne(
+      { _id: studentId },
+      {
+        $push: {
+          courses: {
+            course: courseId,
+            status: "activo",
+            from: new Date()
+          }
+        }
+      }
+    );
 
-  if (!course) {
-    throw new Error("Curso no encontrado");
+
+    return {
+      courseId: course._id,
+      studentId
+    };
   }
 
-  const usersWithStatus = course.users.map(u => {
-    // ⚠️ verificar que u.user exista
-    if (!u.user) {
+  async addSubjectToCourse(courseId, { subjectId, teacherId = null }) {
+    // ⚠️ Verificar que exista el curso
+    const course = await Course.findById(courseId);
+    if (!course) throw new Error("Curso no encontrado");
+
+    // ⚠️ Evitar duplicados
+    const alreadyAssigned = course.subjects.some(
+      (s) => s.subject && s.subject.toString() === subjectId
+    );
+    if (alreadyAssigned) throw new Error("La materia ya está asignada al curso");
+
+    // ✅ Update atómico
+    await Course.updateOne(
+      { _id: courseId },
+      {
+        $push: {
+          subjects: { subject: subjectId, teacher: teacherId }
+        }
+      }
+    );
+
+    return {
+      courseId: course._id,
+      subjectId,
+      teacherId
+    };
+  }
+  async getCourseUsers(courseId) {
+    const course = await Course.findById(courseId)
+      .select("users")
+      .populate("users.user", "nombre apellido email dni rol activo courses");
+
+    if (!course) {
+      throw new Error("Curso no encontrado");
+    }
+
+    const usersWithStatus = course.users.map(u => {
+      // ⚠️ verificar que u.user exista
+      if (!u.user) {
+        return {
+          ...u.toObject(),
+          status: "Usuario no encontrado"
+        };
+      }
+
+      const user = u.user.toObject();
+
+      // ⚠️ asegurar que user.courses exista
+      const userCourse = Array.isArray(user.courses)
+        ? user.courses.find(c => c.course.toString() === courseId.toString())
+        : null;
+
       return {
         ...u.toObject(),
-        status: "Usuario no encontrado"
+        status: userCourse?.status || "No asignado"
       };
-    }
+    });
 
-    const user = u.user.toObject();
-
-    // ⚠️ asegurar que user.courses exista
-    const userCourse = Array.isArray(user.courses)
-      ? user.courses.find(c => c.course.toString() === courseId.toString())
-      : null;
-
-    return {
-      ...u.toObject(),
-      status: userCourse?.status || "No asignado"
-    };
-  });
-
-  return usersWithStatus;
-}
-
-
-async getCourseStudents(courseId) {
-  const course = await Course.findById(courseId)
-    .select("students")
-    .populate("students.student", "nombre apellido email dni rol activo courses");
-
-  if (!course) {
-    throw new Error("Curso no encontrado");
+    return usersWithStatus;
   }
 
-  // Agregar status de este curso a cada estudiante
-  const studentsWithStatus = course.students.map(s => {
-    // ⚠️ Verificar que s.student exista
-    if (!s.student) {
+
+  async getCourseStudents(courseId) {
+    const course = await Course.findById(courseId)
+      .select("students")
+      .populate("students.student", "nombre apellido email dni rol activo courses");
+
+    if (!course) {
+      throw new Error("Curso no encontrado");
+    }
+
+    // Agregar status de este curso a cada estudiante
+    const studentsWithStatus = course.students.map(s => {
+      // ⚠️ Verificar que s.student exista
+      if (!s.student) {
+        return {
+          ...s.toObject(),
+          status: "Alumno no encontrado"
+        };
+      }
+
+      const student = s.student.toObject();
+
+      const studentCourse = Array.isArray(student.courses)
+        ? student.courses.find(c => c.course.toString() === courseId.toString())
+        : null;
+
       return {
         ...s.toObject(),
-        status: "Alumno no encontrado"
+        status: studentCourse?.status || "No asignado"
       };
-    }
+    });
 
-    const student = s.student.toObject();
-
-    const studentCourse = Array.isArray(student.courses)
-      ? student.courses.find(c => c.course.toString() === courseId.toString())
-      : null;
-
-    return {
-      ...s.toObject(),
-      status: studentCourse?.status || "No asignado"
-    };
-  });
-
-  return studentsWithStatus;
-}
-
-async getCourseSubjects(courseId) {
-  const course = await Course.findById(courseId)
-    .select("subjects")
-    .populate("subjects.subject", "name code type active") // materias
-    .populate("subjects.teacher", "nombre apellido email rol"); // docente
-
-  if (!course) {
-    throw new Error("Curso no encontrado");
+    return studentsWithStatus;
   }
 
-  // Mapear para evitar nulls y agregar status opcional
-  const subjectsWithInfo = course.subjects.map(s => {
-    // Si subject es null, ponemos un placeholder
-    const subject = s.subject ? s.subject.toObject() : null;
+  async getCourseSubjects(courseId) {
+    const course = await Course.findById(courseId)
+      .select("subjects")
+      .populate("subjects.subject", "name code type active") // materias
+      .populate("subjects.teacher", "nombre apellido email rol"); // docente
 
-    // Si teacher es null, ponemos null también
-    const teacher = s.teacher ? s.teacher.toObject() : null;
+    if (!course) {
+      throw new Error("Curso no encontrado");
+    }
 
-    return {
-      ...s.toObject(), // mantiene _id y otras propiedades
-      subject,
-      teacher
-    };
-  });
+    // Mapear para evitar nulls y agregar status opcional
+    const subjectsWithInfo = course.subjects.map(s => {
+      // Si subject es null, ponemos un placeholder
+      const subject = s.subject ? s.subject.toObject() : null;
 
-  return subjectsWithInfo;
-}
+      // Si teacher es null, ponemos null también
+      const teacher = s.teacher ? s.teacher.toObject() : null;
+
+      return {
+        ...s.toObject(), // mantiene _id y otras propiedades
+        subject,
+        teacher
+      };
+    });
+
+    return subjectsWithInfo;
+  }
+
+    // Traer todos los cursos de un año académico específico
+  async getCourseYearService(year) {
+    try {
+      if (!year) throw new Error("Debe indicar un año académico");
+
+      // Buscar cursos cuyo academicYear coincida con 'year'
+      const courses = await Course.find({ academicYear: year }).sort({ name: 1 });
+      return courses; // Devuelve un array de cursos
+    } catch (error) {
+        console.error("Error al obtener cursos por año:", error.message);
+      throw error;
+    }
+  }
+
+
 
 
 //❌ Quitar usuario del curso

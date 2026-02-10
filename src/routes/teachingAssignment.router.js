@@ -8,10 +8,18 @@ const router = Router();
 
 // 🔐 Crear asignación (admin)
 router.post(
-  "/",
+  "/create",
   authToken,
   authorizeRoles("superAdmin", "admin"),
   controller.create
+);
+
+// Los teacher que tiene ese curso con sus materias
+router.get(
+  "/teachers/:courseId",
+  authToken,
+  authorizeRoles("superAdmin", "admin","docente"),
+  controller.getTeacherAndSubjetsByCourse
 );
 
 // 🔐 Materias que dicta el docente en un curso
@@ -28,6 +36,30 @@ router.get(
   authToken,
   authorizeRoles("superAdmin", "admin","docente"),
   controller.getSubjectIdsByUserId
+);
+
+// 🔐 Cursos en el que dicta docente en el año enviado
+router.get(
+  "/myCourseByYear/user/:userId",
+  authToken,
+  authorizeRoles("superAdmin", "admin","docente"),
+  controller.getCoursesByUserIdAndYear
+);
+
+router.patch(
+  "/state",
+  authToken,
+  authorizeRoles("superAdmin", "admin","docente"),
+  controller.patchState
+);
+
+
+//❌ Eliminar asignacio definitiva
+router.delete(
+   "/hardDelete",
+  authToken,
+  authorizeRoles("superAdmin", "admin"),
+  controller.deleteAssignment
 );
 
 export default router;

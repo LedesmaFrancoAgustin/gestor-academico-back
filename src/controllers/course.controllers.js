@@ -83,6 +83,19 @@ export default class CursoController extends Controllers{
     }
   };
 
+  getCourseYear = async (req, res, next) => {
+      try {
+        const { year } = req.params;
+
+        const Course = await this.service.getCourseYearService(year);
+
+        createResponse(res, 200, Course);
+      } catch (error) {
+        next(error);
+      }
+    };
+
+
 
   updateCurso = async (req, res, next) => {
     try {
