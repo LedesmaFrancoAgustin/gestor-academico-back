@@ -106,6 +106,7 @@ getTeacherAndSubjetsByCourseService = async (courseId) => {
 
   // 🔹 devolvemos formato listo para el front
   return assignments.map(a => ({
+    TeachingAssignmentId: a._id,
     subjectId: a.subject._id,
     subjectName: a.subject.name,
     subjectCode: a.subject.code,
