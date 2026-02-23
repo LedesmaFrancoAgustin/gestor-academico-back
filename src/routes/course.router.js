@@ -45,7 +45,7 @@ router.get(
 router.get(
   "/:courseId/students",
   authToken,
-  authorizeRoles("superAdmin", "admin","docente"),
+  authorizeRoles("superAdmin", "admin","docente","preceptor"),
   controller.getCourseStudents
 );
 
@@ -61,6 +61,13 @@ router.get(
   authToken,
   authorizeRoles("superAdmin", "admin"),
   controller.getCourseYear
+);
+
+router.get(
+  "/:year/listCourse",
+  authToken,
+  authorizeRoles("superAdmin", "admin","preceptor"),
+  controller.getListCourseYear
 );
 
 router.put(

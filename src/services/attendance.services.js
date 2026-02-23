@@ -79,6 +79,96 @@ async  createAttendanceService(data) {
 } 
 
 /* ====================================
+   🔒 Crear / Actualizar / Borrar asistencia / mASIVO
+==================================== */
+async createAttendanceMassiveService({ courseId, academicYear, trimester, changes }) {
+
+  if (!Array.isArray(changes)) {
+    return { message: "changes debe ser un array" };
+  }
+
+  const operations = [];
+
+  const courseObjectId = new mongoose.Types.ObjectId(courseId);
+
+  for (const change of changes) {
+
+    const {
+      userId,
+      date,
+      attendanceStatus,
+      late,
+      justification,
+      notes,
+      action = "update"
+    } = change;
+
+    if (!userId || !date) continue;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+    const filter = {
+      userId: new mongoose.Types.ObjectId(userId),
+      courseId: courseObjectId,
+      academicYear,
+      trimester,
+      date
+    };
+
+    /*
+    ======================
+    DELETE
+    ======================
+    */
+    if (action === "delete") {
+
+      operations.push({
+        deleteOne: { filter }
+      });
+
+      continue;
+    }
+
+    /*
+    ======================
+    UPDATE
+    ======================
+    */
+    if (action === "update") {
+
+      if (attendanceStatus &&
+        !["present", "absent"].includes(attendanceStatus)) continue;
+
+      operations.push({
+        updateOne: {
+          filter,
+          update: {
+            $set: {
+              ...(attendanceStatus && { attendanceStatus }),
+
+              late: late ?? { isLate: false, minutes: null },
+
+              justification: justification ?? { isJustified: false },
+
+              notes: notes ?? ""
+            }
+          },
+          upsert: true
+        }
+      });
+    }
+  }
+
+  if (!operations.length) {
+    return { message: "No hubo operaciones válidas" };
+  }
+
+  const result = await Attendance.bulkWrite(operations);
+
+  return result;
+}
+
+/* ====================================
   🔓 Obtener inasistencias de un curso por mes
 ==================================== */
 async getByCourseFromMonthService(courseId, year, month) {

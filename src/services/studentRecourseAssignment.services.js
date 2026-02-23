@@ -65,7 +65,7 @@ export default class StudentRecourseAssignmentService {
     })
       .populate({
         path: "studentId",
-        select: "nombre email dni"
+        select: "nombre apellido email dni"
       })
       .populate({
         path: "teachingAssignmentId",
@@ -78,7 +78,9 @@ export default class StudentRecourseAssignmentService {
     return recourseStudents.map((r, index) => ({
         index: index + 1,
         id: r._id,
+        studentId: r.studentId?._id, 
         studentName: r.studentId?.nombre,
+        studentLastName: r.studentId?.apellido,
         email: r.studentId?.email,
         dni: r.studentId?.dni,
         subject: r.teachingAssignmentId?.subject?.name,
@@ -88,6 +90,48 @@ export default class StudentRecourseAssignmentService {
 
 
   }
+
+async getRecourseFromTeacherService({ teacherId, subjectId, academicYear }) {
+
+  if (!teacherId || !subjectId || !academicYear) {
+    throw new Error("teacherId, subjectId y academicYear son obligatorios");
+  }
+
+  // 1️⃣ Buscar la asignación docente específica
+  const teachingAssignment = await TeachingAssignment.findOne({
+    teacher: teacherId,
+    subject: subjectId,
+    academicYear,
+    active: true
+  });
+
+  if (!teachingAssignment) {
+    return [];
+  }
+
+  // 2️⃣ Buscar recursantes de esa asignación
+  const recourseStudents = await StudentRecourseAssignment.find({
+    teachingAssignmentId: teachingAssignment._id,
+    academicYear,
+    active: true
+  })
+    .populate({
+      path: "studentId",
+      select: "nombre apellido email dni"
+    });
+
+  return recourseStudents.map((r, index) => ({
+    index: index + 1,
+    id: r._id,
+    studentId: r.studentId?._id,
+    studentNombre: r.studentId?.nombre,
+    studentApellido: r.studentId?.apellido ,
+    email: r.studentId?.email,
+    studentDni: r.studentId?.dni,
+    academicYear: r.academicYear
+  }));
+}
+
 
   async deleteRecourseStudentsService(studentRecourseAssignmentId) {
 

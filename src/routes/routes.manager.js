@@ -10,6 +10,9 @@ import teachingAssignmentRouter from "./teachingAssignment.router.js"
 import attendanceRouter from "./attendance.router.js"
 import studentSubjectStatus from "./studentSubjectStatus.router.js"
 import StudentRecourseAssignment from "./studentRecourseAssignment.router.js"
+import academicYearPeriodConfig from "./AcademicYearPeriodConfig.router.js";
+import importRouter from "./importMassive.router.js"
+
 
 import pdfRouter from "./pdf.router.js"
 //import alumnosRouter from "./alumnos.router.js";
@@ -27,8 +30,10 @@ router.use("/TeachingAssignment", teachingAssignmentRouter);
 router.use("/attendance", attendanceRouter);
 router.use("/studentSubjectStatus", studentSubjectStatus);
 router.use("/studentRecourseAssignment", StudentRecourseAssignment);
+router.use("/academicYearPeriodConfig", academicYearPeriodConfig);
 
 router.use("/pdf", pdfRouter);
+router.use("/importMassive", importRouter);
 //router.use("/alumnos", alumnosRouter);
 //router.use("/docentes", docentesRouter);
 

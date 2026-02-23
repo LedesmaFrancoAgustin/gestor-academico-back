@@ -21,6 +21,17 @@ router.post(
   controller.createAttendance
 );
 
+/* 🔒 SOLO ADMIN / preceptor
+   Crear / registrar  inasistencia / Masiva
+   POST /api/attendance
+*/
+router.post(
+  "/massive",
+  authToken,
+  authorizeRoles("superAdmin","admin","preceptor"),
+  controller.createAttendanceMassive
+);
+
 /* 🔓 CUALQUIER USUARIO AUTENTICADO
    Obtener presentes y ausentes del es de un curso
    GET /api/attendance/course/:courseId

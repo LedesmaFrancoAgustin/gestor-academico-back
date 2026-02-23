@@ -60,6 +60,37 @@ export default class AttendanceController {
       }
   };
 
+  // 🔒 Crear / Actualizar / Borrar asistencia MASIVA
+createAttendanceMassive = async (req, res, next) => {
+  try {
+    const { courseId, academicYear, trimester, changes } = req.body;
+     console.log("courseId: ",courseId)
+      console.log("academicYear: ",academicYear)
+       console.log("trimester: ",trimester)
+   console.log("changes: ",changes)
+    // 🔒 Validaciones base
+    if (!courseId || !academicYear || !trimester || !Array.isArray(changes)) {
+      return createResponse(res, 400, null, "Datos inválidos");
+    }
+
+    if (changes.length === 0) {
+      return createResponse(res, 400, null, "No hay cambios para guardar");
+    }
+
+    const result = await this.service.createAttendanceMassiveService({
+      courseId,
+      academicYear,
+      trimester,
+      changes
+    });
+
+    return createResponse(res, 200, result, "Asistencia guardada correctamente");
+
+  } catch (error) {
+    next(error);
+  }
+};
+
 
   // 🔓 Obtener inasistencias de un curso por mes
   getByCourseFromMonth = async (req, res, next) => {

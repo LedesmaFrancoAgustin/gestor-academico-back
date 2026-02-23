@@ -72,6 +72,37 @@ export default class StudentRecourseAssignmentController {
   }
 };
 
+  // 🔒 Obtener estudiante recursante de la materia
+getRecourseFromTeacher = async (req, res, next) => {
+  try {
+
+    const { teacherId } = req.params;
+    const { subjectId, academicYear } = req.query;
+
+    if (!teacherId || !subjectId || !academicYear) {
+      return createResponse(
+        res,
+        400,
+        null,
+        "teacherId, subjectId y academicYear son obligatorios"
+      );
+    }
+
+    const result = await this.service.getRecourseFromTeacherService({
+      teacherId,
+      subjectId,
+      academicYear: Number(academicYear)
+    });
+
+    return createResponse(res, 200, result, "");
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
   // 🔒 Eliminar estudiante recursante del curso
 deleteRecourseStudents = async (req, res, next) => {
   try {

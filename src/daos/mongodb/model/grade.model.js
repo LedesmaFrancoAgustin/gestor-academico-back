@@ -4,46 +4,111 @@ const { Schema, model, Types } = mongoose;
 
 const gradeSchema = new Schema(
   {
+    // ===========================
+    // 📌 Referencias principales
+    // ===========================
+
     student: {
       type: Types.ObjectId,
       ref: "User",
-      required: true
+      required: true,
     },
-    course: {
-      type: Types.ObjectId,
-      ref: "Course",
-      required: true
-    },
+
     subject: {
       type: Types.ObjectId,
       ref: "Subject",
-      required: true
+      required: true,
     },
-    teacher: {
+
+    course: {
       type: Types.ObjectId,
-      ref: "User",
-      required: true
+      ref: "Course",
+      required: true,
     },
+
+    // ===========================
+    // 📌 Año lectivo
+    // ===========================
+
+    academicYear: {
+      type: Number,
+      required: true,
+    },
+
+    // ===========================
+    // 📌 Recursante
+    // ===========================
+
+    isRepeating: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ===========================
+    // 📌 Notas + Auditoría
+    // ===========================
+
     grades: {
-      firstTerm: { type: Number, min: 1, max: 10, default: null },
-      secondTerm: { type: Number, min: 1, max: 10, default: null },
-      recuperatory: { type: Number, min: 1, max: 10, default: null },
-      december: { type: Number, min: 1, max: 10, default: null },
-      february: { type: Number, min: 1, max: 10, default: null }
+
+    firstTerm: {
+      partial: {
+        value: { type: Number, default: null },
+        loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+        loadedAt: { type: Date, default: null },
+      },
+      final: {
+        value: { type: Number, default: null },
+        loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+        loadedAt: { type: Date, default: null },
+      },
     },
-    updatedAt: {
-      type: Date,
-      default: Date.now
-    }
+
+    secondTerm: {
+      partial: {
+        value: { type: Number, default: null },
+        loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+        loadedAt: { type: Date, default: null },
+      },
+      final: {
+        value: { type: Number, default: null },
+        loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+        loadedAt: { type: Date, default: null },
+      },
+    },
+
+    recuperatoryFirstTerm: {
+      value: { type: Number, default: null },
+      loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+      loadedAt: { type: Date, default: null },
+    },
+
+    december: {
+      value: { type: Number, default: null },
+      loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+      loadedAt: { type: Date, default: null },
+    },
+
+    february: {
+      value: { type: Number, default: null },
+      loadedBy: { type: Types.ObjectId, ref: "User", default: null },
+      loadedAt: { type: Date, default: null },
+    },
+  }
+  ,
   },
   {
-    timestamps: true // crea createdAt y updatedAt automáticos
+    timestamps: true,
   }
 );
 
-// Evitar duplicados: un alumno no puede tener dos notas para la misma materia y curso
-gradeSchema.index({ student: 1, course: 1, subject: 1 }, { unique: true });
+//
+// ✅ Índice único correcto
+// Un alumno no puede tener 2 notas de la misma materia
+// en el mismo curso y mismo año
+//
+gradeSchema.index(
+  { student: 1, subject: 1, course: 1, academicYear: 1 },
+  { unique: true }
+);
 
-const Grade = model("Grade", gradeSchema);
-
-export default Grade;
+export default model("Grade", gradeSchema);

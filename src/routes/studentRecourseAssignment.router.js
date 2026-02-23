@@ -34,6 +34,18 @@ router.get(
 );
 
 /* 
+   Obtener  /  recursante de un profesor especifico especifico
+   POST /api/student-recourse
+*/
+
+router.get(
+  "/recourse/teacher/:teacherId",
+  authToken,
+  authorizeRoles("superAdmin","admin","docente"),
+  controller.getRecourseFromTeacher
+);
+
+/* 
    Elimminar  /  eliminar recursante en esa ateria definitivo (Error humano)
    delete /api/studentRecourseAssignment
 */

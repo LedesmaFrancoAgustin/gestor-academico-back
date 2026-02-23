@@ -18,6 +18,12 @@ const subjectSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    // 🔥 NUEVO → orden en boletín
+    order: {
+      type: Number,
+      required: true,
+      min: 1
+    },
     type: {
       type: String,
       enum: ["mandatory", "optional"],

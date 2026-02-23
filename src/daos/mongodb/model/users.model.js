@@ -51,13 +51,43 @@ const userSchema = new Schema(
 
     rol: {
       type: String,
-      enum: ["superAdmin","admin", "docente", "alumno"],
+      enum: ["superAdmin","admin", "docente", "alumno", "preceptor"],
       required: true
     },
 
     activo: {
       type: Boolean,
       default: true
+    },
+    // ==============================
+    // 🔹 Datos personales extra
+    // ==============================
+
+    legajo: {
+      type: String,
+      trim: true,
+      default: null,
+      index: {
+        unique: true,
+        sparse: true
+      }
+    },
+
+    fechaNacimiento: {
+      type: Date,
+      default: null
+    },
+
+    genero: {
+      type: String,
+      enum: ["masculino", "femenino", "otro", "no_binario"],
+      default: null
+    },
+
+    libroFolio: {
+      type: String,
+      default: null,
+      trim: true
     },
 
     // 🔹 Curso actual

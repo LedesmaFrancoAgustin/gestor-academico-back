@@ -1,5 +1,6 @@
 import Grade from "../daos/mongodb/model/grade.model.js"; // tu modelo de notas
 import Course from "../daos/mongodb/model/course.model.js"; 
+import AcademicConfig from "../daos/mongodb/model/AcademicYearPeriodConfig.model.js"
 import mongoose from "mongoose";
 
 export default class GradeService {
@@ -45,31 +46,130 @@ register = async (data) => {
   return newGrade;
 };
 
-async registerIndividualNote({ studentId, courseId, subjectId, term, value, teacherId }) {
+async registerIndividualNote({
+  studentId,
+  courseId,
+  subjectId,
+  academicYear,
+  term,
+  value,
+  user,
+  isRepeating = false
+}) {
 
-  const validTerms = [
-    "firstTerm",
-    "secondTerm",
-    "recuperatory",
-    "december",
-    "february"
-  ];
+  const isSuperAdmin = user.role === "superAdmin";
+  const teacherId = user.id;
 
-  if (!validTerms.includes(term)) {
-    throw new Error("Tipo de nota inválido");
+  const isDeleting = value === null;
+
+  // ✅ Validación solo si NO es borrado
+  if (!isDeleting) {
+    if (typeof value !== "number" || value < 1 || value > 10) {
+      throw new Error("La nota debe estar entre 1 y 10");
+    }
+  }
+
+  const academicConfig = await AcademicConfig.findOne({
+    academicYear
+  }).lean();
+
+  if (!academicConfig) {
+    throw new Error("No existe configuración académica para el año");
+  }
+
+  const existingGrade = await Grade.findOne({
+    student: studentId,
+    subject: subjectId,
+    course: courseId,
+    academicYear
+  }).lean();
+
+  const currentGrades = existingGrade?.grades || {};
+
+  // 🔐 Validar instancias permitidas (solo si no es superAdmin)
+  if (!isSuperAdmin) {
+
+    const allowedInstances = evaluateAllowedInstances(currentGrades);
+    const alreadyLoaded = getGradeValue(currentGrades, term) !== null;
+
+    if (!allowedInstances.includes(term) && !alreadyLoaded) {
+      throw new Error(`No está permitido modificar ${term} en este momento`);
+    }
+  }
+
+  // 🔎 Determinar período
+  const [periodKey, evaluationType] = term.includes(".")
+    ? term.split(".")
+    : [term, null];
+
+  const periodConfig = academicConfig.periods.find(
+    p => p.key === periodKey
+  );
+
+  if (!periodConfig) {
+    throw new Error(`No existe configuración para ${periodKey}`);
+  }
+
+  // ⏱ Validación calendario (solo si no es superAdmin)
+  if (!isSuperAdmin) {
+
+    if (evaluationType) {
+      if (!isEvaluationOpen(periodConfig, evaluationType)) {
+        throw new Error(
+          `La evaluación ${evaluationType} de ${periodConfig.name} no está habilitada`
+        );
+      }
+    } else {
+      if (periodConfig.isManuallyClosed) {
+        throw new Error(`El período ${periodConfig.name} está cerrado`);
+      }
+    }
+  }
+
+  // ============================
+  // 🧱 Construcción dinámica
+  // ============================
+
+  let updateOperation;
+
+  if (isDeleting) {
+    // 🔥 BORRAR NOTA
+    updateOperation = {
+      $set: {
+        academicYear,
+        isRepeating,
+        updatedAt: new Date(),
+        [`grades.${term}.value`]: null,
+        [`grades.${term}.loadedBy`]: null,
+        [`grades.${term}.loadedAt`]: null
+      },
+      $setOnInsert: { createdAt: new Date() }
+    };
+  } else {
+    // ✅ GUARDAR NOTA
+    updateOperation = {
+      $set: {
+        academicYear,
+        isRepeating,
+        updatedAt: new Date(),
+        [`grades.${term}.value`]: value,
+        [`grades.${term}.loadedBy`]: teacherId,
+        [`grades.${term}.loadedAt`]: new Date()
+      },
+      $setOnInsert: { createdAt: new Date() }
+    };
   }
 
   const grade = await Grade.findOneAndUpdate(
-    { student: studentId, course: courseId, subject: subjectId },
     {
-      $set: {
-        [`grades.${term}`]: value,
-        teacher: teacherId,
-        updatedAt: new Date()
-      }
+      student: studentId,
+      subject: subjectId,
+      course: courseId,
+      academicYear
     },
+    updateOperation,
     {
-      upsert: true,     // 👈 crea si no existe
+      upsert: true,
       new: true
     }
   );
@@ -110,23 +210,34 @@ async registerIndividualNote({ studentId, courseId, subjectId, term, value, teac
     return grade;
   };
 
-async getGradesByCourse(courseId, term = null) {
+async getGradesByCourse(courseId, term = null, academicYear = null) {
+
   if (!courseId) throw new Error("No se proporcionó courseId");
 
-  const grades = await Grade.find({ course: courseId })
+  const query = { course: courseId };
+
+  // 👉 opcional pero recomendable
+  if (academicYear) {
+    query.academicYear = academicYear;
+  }
+
+  const grades = await Grade.find(query)
     .populate("student", "nombre apellido dni")
     .populate("subject", "name")
     .lean();
 
   const validTerms = [
-    "firstTerm",
-    "secondTerm",
-    "recuperatory",
+    "firstTerm.partial",
+    "firstTerm.final",
+    "secondTerm.partial",
+    "secondTerm.final",
+    "recuperatoryFirstTerm",
     "december",
     "february"
   ];
 
   return grades.map(g => {
+
     const baseData = {
       studentId: g.student._id,
       studentNombre: g.student.nombre,
@@ -134,90 +245,100 @@ async getGradesByCourse(courseId, term = null) {
       studentDni: g.student.dni,
       subjectId: g.subject._id,
       subjectName: g.subject.name,
+      isRepeating: g.isRepeating,
+      academicYear: g.academicYear
     };
 
-    // 👉 Si NO viene term → enviamos las 5 notas
+    // 🔥 Si NO viene term → devolvemos estructura completa
     if (!term) {
       return {
         ...baseData,
-        grades: {
-          firstTerm: g.grades.firstTerm ?? null,
-          secondTerm: g.grades.secondTerm ?? null,
-          recuperatory: g.grades.recuperatory ?? null,
-          december: g.grades.december ?? null,
-          february: g.grades.february ?? null,
-        }
+        grades: g.grades
       };
     }
 
-    // 👉 Si viene term válido → enviamos solo esa nota
+    // ❌ term inválido
     if (!validTerms.includes(term)) {
       throw new Error("Término inválido");
     }
 
+    const gradeData = getNestedValue(g.grades, term);
+
     return {
       ...baseData,
-      value: g.grades[term] ?? null
+      grade: gradeData
+        ? {
+            value: gradeData.value,
+            loadedBy: gradeData.loadedBy,
+            loadedAt: gradeData.loadedAt
+          }
+        : null
     };
   });
 }
-async getGradesByCourseAndSubject(courseId, subjectId, term = null) {
+async getGradesByCourseAndSubject(courseId, subjectId, term = null, academicYear) {
+
   if (!courseId) throw new Error("No se proporcionó courseId");
   if (!subjectId) throw new Error("No se proporcionó subjectId");
+  if (!academicYear) throw new Error("Debe especificar el año académico");
 
   const grades = await Grade.find({
+    academicYear: Number(academicYear),
     course: courseId,
     subject: subjectId
   })
+    .select("student subject grades academicYear isRepeating")
     .populate("student", "nombre apellido dni")
     .populate("subject", "name")
     .lean();
 
   const validTerms = [
-    "firstTerm",
-    "secondTerm",
-    "recuperatory",
+    "firstTerm.partial",
+    "firstTerm.final",
+    "secondTerm.partial",
+    "secondTerm.final",
+    "recuperatoryFirstTerm",
     "december",
     "february"
   ];
 
   return grades.map(g => {
+
     const baseData = {
+      academicYear: g.academicYear,
       studentId: g.student._id,
       studentNombre: g.student.nombre,
       studentApellido: g.student.apellido,
       studentDni: g.student.dni,
       subjectId: g.subject._id,
-      subjectName: g.subject.name
+      subjectName: g.subject.name,
+      isRepeating: g.isRepeating
     };
 
-    // 👉 SIN term → enviamos todas las notas
+    // 👉 SIN term → devolvemos estructura completa real
     if (!term) {
       return {
         ...baseData,
-        grades: {
-          firstTerm: g.grades.firstTerm ?? null,
-          secondTerm: g.grades.secondTerm ?? null,
-          recuperatory: g.grades.recuperatory ?? null,
-          december: g.grades.december ?? null,
-          february: g.grades.february ?? null
-        }
+        grades: g.grades
       };
     }
 
-    // 👉 CON term válido → enviamos solo esa nota
+    // 👉 Validación
     if (!validTerms.includes(term)) {
       throw new Error("Término inválido");
     }
 
+    const gradeData = getNestedValue(g.grades, term);
+
     return {
       ...baseData,
-      value: g.grades[term] ?? null
+      grade: gradeData ?? null
     };
   });
 }
 
 async getGradesByCourseAndStudent(courseId, userId, period = "all") {
+
   if (!courseId) throw new Error("No se proporcionó courseId");
   if (!userId) throw new Error("No se proporcionó userId");
 
@@ -225,92 +346,144 @@ async getGradesByCourseAndStudent(courseId, userId, period = "all") {
     course: courseId,
     student: userId
   })
-    .select("subject grades updatedAt")
+    .select("subject grades updatedAt isRepeating")
     .populate("subject", "name")
     .lean();
 
-  if (period === "all") return grades;
+  if (period === "all") {
+    return grades.map(g => ({
+      subject: g.subject,
+      isRepeating: g.isRepeating,
+      grades: g.grades,
+      updatedAt: g.updatedAt
+    }));
+  }
 
   return grades.map(g => ({
     subject: g.subject,
-    grade: g.grades[period],
+    isRepeating: g.isRepeating,
+    grade: getNestedValue(g.grades, period), // 🔥 clave
     updatedAt: g.updatedAt
   }));
 }
 
-
 // 🔹 Guardar varias notas (bulk)
-async saveGrades(gradesArray) {
+async saveGrades(gradesArray, teacherId) {
+
+  console.log("gradesArray: ",gradesArray)
   if (!Array.isArray(gradesArray) || gradesArray.length === 0) {
     throw new Error("No se enviaron notas para guardar");
   }
 
-  console.log("gradesArray: ", gradesArray)
+  const academicConfig = await AcademicConfig.findOne({
+    academicYear: gradesArray[0].academicYear
+  }).lean();
+
+  if (!academicConfig) {
+    throw new Error("No existe configuración académica para el año");
+  }
+
   const bulkOps = [];
 
   for (const data of gradesArray) {
-    const { student, course, subject, teacher, grades } = data;
 
-    if (!student || !course || !subject || !teacher || !grades) {
-      throw new Error("Faltan datos obligatorios en una de las notas");
-    }
+    const {
+      student,
+      course,
+      subject,
+      grades,
+      academicYear,
+      isRepeating = false
+    } = data;
 
-    const courseData = await Course.findById(course).lean();
-    if (!courseData) throw new Error("Curso no encontrado");
+    const existingGrade = await Grade.findOne({
+      student,
+      subject,
+      course,
+      academicYear
+    }).lean();
 
-    const isStudentEnrolled = courseData.students?.some(
-        s => s.student?.toString() === student?.toString() && s.active
-      );
-    if (!isStudentEnrolled) {
-        console.error("Alumno no encontrado en curso:", { student, course, courseStudents: courseData.students });
-        throw new Error(`El alumno ${student} no está inscrito o activo en el curso`);
+    const currentGrades = existingGrade?.grades || {};
+
+    // 🔐 Instancias permitidas según historial
+    const allowedInstances = evaluateAllowedInstances(currentGrades);
+
+    for (const [path, gradeObj] of Object.entries(grades)) {
+
+      const alreadyLoaded = getGradeValue(currentGrades, path) !== null;
+
+      if (!allowedInstances.includes(path) && !alreadyLoaded) {
+        throw new Error(`No está permitido cargar ${path} en este momento`);
       }
 
-    const subjectInCourse = courseData.subjects?.find(
-        subj => subj.subject?.toString() === subject?.toString()
+      // 🔎 Determinar período + evaluación
+      const [periodKey, evaluationType] = path.includes(".")
+        ? path.split(".")
+        : [path, null];
+
+      const periodConfig = academicConfig.periods.find(
+        p => p.key === periodKey
       );
-      if (!subjectInCourse) {
-        console.error("Materia no encontrada en curso:", { subject, course, courseSubjects: courseData.subjects });
-        throw new Error(`La materia ${subject} no pertenece a este curso`);
+
+      if (!periodConfig) {
+        throw new Error(`No existe configuración para ${periodKey}`);
       }
-      
-      const VALID_RANGE = { min: 1, max: 10 };
 
-      for (const [term, value] of Object.entries(grades)) {
-        if (value === null) continue;
-
-        if (value < VALID_RANGE.min || value > VALID_RANGE.max) {
+      // ⏱ Validar ventana
+      if (evaluationType) {
+        if (!isEvaluationOpen(periodConfig, evaluationType)) {
           throw new Error(
-            `La nota de ${term} debe estar entre ${VALID_RANGE.min} y ${VALID_RANGE.max}`
+            `La evaluación ${evaluationType} de ${periodConfig.name} no está habilitada`
           );
+        }
+      } else {
+        if (periodConfig.isManuallyClosed) {
+          throw new Error(`El período ${periodConfig.name} está cerrado`);
         }
       }
 
-    // 3️⃣ Preparar operación bulkWrite (upsert)
+      // 📏 Validar rango
+      if (
+        typeof gradeObj.value !== "number" ||
+        gradeObj.value < 1 ||
+        gradeObj.value > 10
+      ) {
+        throw new Error(`La nota de ${path} debe estar entre 1 y 10`);
+      }
+    }
+
+    // 🧱 Construcción dinámica del $set
+    const setFields = {
+      academicYear,
+      isRepeating,
+      updatedAt: new Date()
+    };
+
+    for (const [path, gradeObj] of Object.entries(grades)) {
+      setFields[`grades.${path}.value`] = gradeObj.value;
+      setFields[`grades.${path}.loadedBy`] = teacherId;
+      setFields[`grades.${path}.loadedAt`] = new Date();
+    }
+
     bulkOps.push({
       updateOne: {
-        filter: { student, course, subject },
+        filter: { student, subject, course, academicYear },
         update: {
-          $set: {
-            teacher,
-            grades,
-            updatedAt: new Date()
-          }
+          $set: setFields,
+          $setOnInsert: { createdAt: new Date() }
         },
         upsert: true
       }
     });
   }
 
-  // Ejecutar todas las operaciones en un solo request a la DB
-  const result = await Grade.bulkWrite(bulkOps);
+  await Grade.bulkWrite(bulkOps);
 
-  return result; // devuelve info de cuántos insertados / modificados
+  return { success: true };
 }
 
-
   // 🔹 Listar notas según filtros
-  list = async (filters = {}) => {
+ list = async (filters = {}) => {
     const query = {};
 
     if (filters.student) query.student = filters.student;
@@ -326,3 +499,59 @@ async saveGrades(gradesArray) {
     return grades;
   };
 }
+
+
+// ============================================================================================================
+// 🔹 FUNCION PARA LA LOGINA DE LAS NOTAS
+ //============================================================================================================
+const GRADE_ORDER = [
+  "firstTerm.partial",
+  "firstTerm.final",
+  "secondTerm.partial",
+  "secondTerm.final",
+  "recuperatoryFirstTerm",
+  "december",
+  "february"
+];
+
+function getNestedValue(obj, path) {
+  return path.split(".").reduce((acc, key) => acc?.[key], obj);
+}
+function getGradeValue(grades, path) {
+  return path.split(".").reduce((acc, key) => acc?.[key], grades)?.value ?? null;
+}
+
+function evaluateAllowedInstances(grades) {
+  const firstFinal = getGradeValue(grades, "firstTerm.final");
+  const secondFinal = getGradeValue(grades, "secondTerm.final");
+
+  // 🎓 Promoción directa
+  if (firstFinal >= 7 && secondFinal >= 7) {
+    return [];
+  }
+
+  // Buscar la primera instancia pendiente según el orden
+  for (const key of GRADE_ORDER) {
+    const value = getGradeValue(grades, key);
+    if (value == null) return [key];
+  }
+
+  return [];
+}
+
+function isEvaluationOpen(periodConfig, evaluationType) {
+  if (!periodConfig || periodConfig.isManuallyClosed) return false;
+
+  const evaluation = periodConfig.evaluations?.find(
+    e => e.type === evaluationType
+  );
+
+  if (!evaluation) return false;
+
+  const now = new Date();
+  const start = new Date(evaluation.gradingWindow.startDate);
+  const end = new Date(evaluation.gradingWindow.endDate);
+
+  return now >= start && now <= end;
+}
+

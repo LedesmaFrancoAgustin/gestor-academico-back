@@ -18,11 +18,17 @@ export default class GradeController extends Controllers {
       next(error);
     }
   };
-  // 🔹 Crear nota
+  /// 🔹 Crear nota
   registerIndividualNote = async (req, res, next) => {
     try {
-      const grade = await this.service.registerIndividualNote(req.body);
+
+      const grade = await this.service.registerIndividualNote({
+        ...req.body,
+        user: req.user   // 👈 pasás todo el usuario
+      });
+
       createResponse(res, 201, grade);
+
     } catch (error) {
       next(error);
     }
@@ -54,12 +60,12 @@ export default class GradeController extends Controllers {
 getGradesByCourse = async (req, res, next) => {
   try {
     const { courseId } = req.params;
-    const term = req.query.term;
-    console.log("Params:", req.params, "Query:", req.query);
+    const { term , academicYear } = req.query;
+    console.log("Params:", req.params, "Query:", term);
 
 
     // service devuelve todas las notas del curso para ese term
-    const grades = await this.service.getGradesByCourse(courseId, term);
+    const grades = await this.service.getGradesByCourse(courseId, term , academicYear);
 
     createResponse(res, 200, grades);
   } catch (error) {
@@ -72,23 +78,29 @@ getGradesByCourse = async (req, res, next) => {
 getGradesByCourseAndSubject = async (req, res, next) => {
   try {
     const { courseId, subjectId } = req.params;
-    const term = req.query.term;
+    const { term = null, academicYear } = req.query;
 
-    console.log("Params:", req.params, "Query:", req.query);
+    if (!academicYear) {
+      return res.status(400).json({
+        message: "Debe especificar el año académico"
+      });
+    }
 
-    // service devuelve las notas del curso filtradas por materia
     const grades = await this.service.getGradesByCourseAndSubject(
       courseId,
       subjectId,
-      term
+      term,
+      Number(academicYear) // 🔥 importante convertir
     );
 
     createResponse(res, 200, grades);
+
   } catch (error) {
     console.error("Error en getGradesByCourseAndSubject:", error);
-    next(error); // genera el 500
+    next(error);
   }
 };
+
 
 // 🔹 Obtener notas por IdCurso + IdMateria
 getGradesByCourseAndStudent = async (req, res, next) => {
@@ -110,7 +122,8 @@ getGradesByCourseAndStudent = async (req, res, next) => {
 saveGrades = async (req, res, next) => {
   try {
     const gradesArray = req.body;
-    const result = await this.service.saveGrades(gradesArray);
+    const teacherId = req.user.id;
+    const result = await this.service.saveGrades(gradesArray , teacherId);
 
     createResponse(res, 200, result);
   } catch (error) {

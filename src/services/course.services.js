@@ -91,12 +91,43 @@ async getCursoActive({ page = 1, limit = 50, q = "" }) {
   };
 }
 
-  // 🔹 Obtener curso por ID
-  async getCursoById(id) {
-    const course = await Course.findById(id);
-    if (!course) throw new Error("Curso no encontrado");
-    return course;
+  // 🔹 Obtener curso completo por ID con info de materias y estudiantes
+async getCursoById(id) {
+  if (!id) throw new Error("Se requiere el ID del curso");
+
+  const course = await Course.findById(id)
+    .populate({
+      path: "students.student",
+      select: "nombre apellido dni email rol activo",
+    })
+    .populate({
+      path: "subjects.subject",
+      select: "name code academicYear order type active",
+    })
+    .populate({
+      path: "subjects.teacher",
+      select: "nombre apellido dni email rol activo",
+    })
+    .lean();
+
+  if (!course) throw new Error("Curso no encontrado");
+
+  // 🔹 Ordenar las materias por order para el boletín
+  if (course.subjects && course.subjects.length > 0) {
+    course.subjects.sort((a, b) => a.subject.order - b.subject.order);
   }
+
+  // 🔹 Opcional: ordenar estudiantes alfabéticamente
+  if (course.students && course.students.length > 0) {
+    course.students.sort((a, b) => {
+      const nameA = a.student.apellido.toLowerCase();
+      const nameB = b.student.apellido.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  }
+
+  return course;
+}
 
   // 🔹 Actualizar curso
   async updateCurso(id, data) {
@@ -275,7 +306,6 @@ async getCursoActive({ page = 1, limit = 50, q = "" }) {
     return usersWithStatus;
   }
 
-
   async getCourseStudents(courseId) {
     const course = await Course.findById(courseId)
       .select("students")
@@ -340,18 +370,53 @@ async getCursoActive({ page = 1, limit = 50, q = "" }) {
 
     // Traer todos los cursos de un año académico específico
   async getCourseYearService(year) {
-    try {
-      if (!year) throw new Error("Debe indicar un año académico");
+  try {
+    if (!year) throw new Error("Debe indicar un año académico");
 
-      // Buscar cursos cuyo academicYear coincida con 'year'
-      const courses = await Course.find({ academicYear: year }).sort({ name: 1 });
-      return courses; // Devuelve un array de cursos
-    } catch (error) {
-        console.error("Error al obtener cursos por año:", error.message);
-      throw error;
-    }
+    const courses = await Course.find({ academicYear: year })
+      .sort({ name: 1 })
+      .populate("subjects.subject");
+
+    // 🔥 Ordenar materias por order después del populate
+    courses.forEach(course => {
+      course.subjects.sort((a, b) => {
+        return (a.subject?.order || 0) - (b.subject?.order || 0);
+      });
+    });
+
+    return courses;
+
+  } catch (error) {
+    console.error("Error al obtener cursos por año:", error.message);
+    throw error;
   }
+}
 
+
+ // Traer todos los cursos de un año académico específico
+// Solo: _id, name, code
+async getListCourseYearService(year) {
+  try {
+
+    console.log(year)
+    if (!year) {
+      throw new Error("Debe indicar un año académico");
+    }
+
+    const courses = await Course.find(
+      { academicYear: year },
+      { _id: 1, name: 1, code: 1 } // 🔥 solo estos campos
+    )
+    .sort({ name: 1 })
+    .lean(); // 🔥 mejora performance
+
+    return courses;
+
+  } catch (error) {
+    console.error("Error al obtener cursos por año:", error.message);
+    throw error;
+  }
+}
 
 
 
