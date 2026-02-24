@@ -6,52 +6,81 @@ import Usuario from "../daos/mongodb/model/users.model.js";
 
 export default class UserService {
 
-  async register({ nombre, apellido, dni, email, password, rol, area, legajo, libroFolio, fechaNacimiento, genero }) {
-  // 1. Verificar si existe por email o dni
-  const exists = await Usuario.findOne({
-    $or: [{ email }, { dni }]
-  });
+ async register({ nombre, apellido, dni, email, password, rol, area, legajo, libroFolio, fechaNacimiento, genero }) {
 
-  if (exists) {
-    const error = new Error("El email o DNI ya está registrado");
-    error.statusCode = 409; // Conflict
-    error.code = "USER_ALREADY_EXISTS";
+  // 🧼 NORMALIZAR CAMPOS OPCIONALES  ← 🔥 AGREGALO ACÁ
+  email = email && email !== "null" ? email.trim() : null;
+  area = area && area !== "null" ? area.trim() : null;
+  legajo = legajo && legajo !== "null" ? legajo.trim() : null;
+  libroFolio = libroFolio && libroFolio !== "null" ? libroFolio.trim() : null;
+  fechaNacimiento = fechaNacimiento || null;
+  genero = genero || null;
+
+  // 🔎 1. Verificar DNI
+  const dniExists = await Usuario.findOne({ dni });
+  if (dniExists) {
+    const error = new Error("El DNI ya está registrado");
+    error.statusCode = 409;
+    error.code = "DNI_DUPLICATE";
     throw error;
   }
 
-  // 2. Hash password
+  // 🔎 2. Verificar Email (si viene)
+  if (email) {
+    const emailExists = await Usuario.findOne({ email });
+    if (emailExists) {
+      const error = new Error("El email ya está registrado");
+      error.statusCode = 409;
+      error.code = "EMAIL_DUPLICATE";
+      throw error;
+    }
+  }
+
+   // 🔐 Validar password obligatorio
+  if (!password || password.trim().length < 6) {
+    const error = new Error("La contraseña es obligatoria y debe tener al menos 6 caracteres");
+    error.statusCode = 400;
+    error.code = "PASSWORD_REQUIRED";
+    throw error;
+  }
+
+  // 🔎 3. Verificar Legajo (si es alumno y viene)
+  if (rol === "alumno" && legajo) {
+    const legajoExists = await Usuario.findOne({ legajo });
+    if (legajoExists) {
+      const error = new Error("El legajo ya está registrado");
+      error.statusCode = 409;
+      error.code = "LEGAJO_DUPLICATE";
+      throw error;
+    }
+  }
+
+  // 🔐 4. Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // 3. Crear usuario
+  // 🧠 5. Crear usuario
   const user = await Usuario.create({
     nombre,
     apellido,
     dni,
-    email,
+    email,                  // 👈 ya viene limpio
     password: hashedPassword,
     rol,
-    activo: true,        // siempre activo al crear
-    area: area || null,
-    legajo: rol === "alumno" ? legajo || null : undefined,
-    libroFolio: libroFolio || null,
-    fechaNacimiento: fechaNacimiento || null,
-    genero: genero || null
+    activo: true,
+    area,                   // 👈 ya viene limpio
+    legajo: rol === "alumno" ? legajo : undefined,
+    libroFolio,
+    fechaNacimiento,
+    genero
   });
 
-  // 4. Respuesta controlada (sin password)
   return {
     id: user._id,
     nombre: user.nombre,
     apellido: user.apellido,
     dni: user.dni,
     email: user.email,
-    rol: user.rol,
-    activo: user.activo,
-    area: user.area,
-    legajo: user.legajo,
-    libroFolio: user.libroFolio,
-    fechaNacimiento: user.fechaNacimiento,
-    genero: user.genero
+    rol: user.rol
   };
 }
 
@@ -125,7 +154,7 @@ async refreshTokenService(refreshToken) {
     refreshToken // opcional: podés generar uno nuevo si querés
   };
 }
-  async getUsers({ limit, page }) {
+async getUsers({ limit, page }) {
   const skip = (page - 1) * limit;
 
   const [users, total] = await Promise.all([
@@ -279,7 +308,7 @@ async getMyCourses(userId) {
 
 async update(userId, updates) {
   // Hash de password si se envió
-  console.log("updates:  ",updates)
+  console.log("updates: entro aca  ",updates)
   if (updates.password) {
     updates.password = await bcrypt.hash(updates.password, 10);
   }

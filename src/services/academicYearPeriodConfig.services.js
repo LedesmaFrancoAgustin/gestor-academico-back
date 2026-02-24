@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import AcademicYearPeriodConfig from '../daos/mongodb/model/academicYearPeriodConfig.model.js';
 import { normalizeDateToArgentina } from "../utils.js";
 
