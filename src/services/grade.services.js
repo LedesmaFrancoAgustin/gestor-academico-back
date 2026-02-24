@@ -1,6 +1,6 @@
 import Grade from "../daos/mongodb/model/grade.model.js"; // tu modelo de notas
 import Course from "../daos/mongodb/model/course.model.js"; 
-import AcademicConfig from "../daos/mongodb/model/AcademicYearPeriodConfig.model.js"
+import AcademicConfig from "../daos/mongodb/model/academicYearPeriodConfig.model.js"
 import mongoose from "mongoose";
 
 export default class GradeService {
