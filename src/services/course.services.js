@@ -7,12 +7,12 @@ import User from "../daos/mongodb/model/users.model.js"
 export default class CursoService {
   // 🔹 Crear curso
   async createCurso(data) {
-    const { name, code, academicYear, active } = data;
+    const { name, code, modality ,academicYear, active } = data;
 
-    console.log(data);
+    console.log("dATA ",data);
     // Validaciones básicas
-   if (!name || !code || !academicYear || active === undefined) {
-  throw new Error("Todos los campos (nombre, codigo, año académico, activo) son obligatorios");
+  if (!name || !code || !academicYear || active === undefined || !modality) {
+  throw new Error("Todos los campos (nombre, código, modalidad, año académico y activo) son obligatorios");
 }
 
 
@@ -23,9 +23,9 @@ export default class CursoService {
     }
 
     // Crear curso
-    const course = new Course({ name, code, academicYear, active });
+    const course = new Course({ name, code, modality ,academicYear, active });
     await course.save();
-    console.log(course)
+    console.log("course : ", course)
     return course;
   }
 
@@ -38,8 +38,8 @@ export default class CursoService {
     // Busca por nombre o código insensible a mayúsculas
     filter = {
       $or: [
-        { nombre: { $regex: q, $options: "i" } },
-        { codigo: { $regex: q, $options: "i" } }
+        { name: { $regex: q, $options: "i" } },
+        { code: { $regex: q, $options: "i" } }
       ]
     };
   }

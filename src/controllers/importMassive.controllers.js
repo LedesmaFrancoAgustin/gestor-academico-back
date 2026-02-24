@@ -6,13 +6,17 @@ export default class PdfController{
   }
 
  createMassiveStudets = async (req, res, next) => {
-    try {
-        const result = await this.service.createMassiveStudetsService(req.file);
-        createResponse(res, 201, result);
-    } catch (error) {
-        next(error);
-    }
-    };
+  try {
+    const result = await this.service.createMassiveStudetsService(req.file);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error("Error en carga masiva:", error); // log en consola para debugging
+    return res.status(500).json({
+      message: "Error en la carga masiva",
+      error: error.message || "Error desconocido"
+    });
+  }
+};
 
 
 }

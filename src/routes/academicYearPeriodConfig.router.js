@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authToken } from "../middlewares/authJwt.middleware.js";
 import { authorizeRoles } from "../middlewares/roles.middleware.js";
-import AcademicYearPeriodConfig from "../controllers/academicYearPeriodConfig.controllers.js";
+import AcademicYearPeriodConfig from "../controllers/AcademicYearPeriodConfig.controllers.js";
 
 const router = Router();
 const controller = new AcademicYearPeriodConfig();

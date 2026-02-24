@@ -169,7 +169,14 @@ changeMyPassword = async (req, res, next) => {
     next(error);
   }
 };
-
+ deleteUserId = async (req, res, next) => {
+    try {
+      const user = await this.service.deleteUserIdService(req.params.id); // 🔹 pasamos id
+      createResponse(res, 200, { message: "Usuario eliminado correctamente", user });
+    } catch (error) {
+      next(error);
+    }
+  };
 
 
 

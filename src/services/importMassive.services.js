@@ -1,115 +1,169 @@
 import xlsx from "xlsx";
 import bcrypt from "bcrypt";
 import User from "../daos/mongodb/model/users.model.js";
+import Course from "../daos/mongodb/model/course.model.js";
 
 export default class ImportMassiveService {
 
   createMassiveStudetsService = async (file) => {
-
     if (!file) throw new Error("No file uploaded");
 
     const workbook = xlsx.read(file.buffer);
     const sheetName = workbook.SheetNames[0];
 
-    const data = xlsx.utils.sheet_to_json(
-      workbook.Sheets[sheetName]
-    );
+    const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
     if (data.length === 0) {
       return { message: "Excel vacío" };
     }
 
-    const bulkOperations = [];
     const errors = [];
+    let insertedCount = 0;
+    let updatedCount = 0;
 
-    for (const row of data) {
+    for (let index = 0; index < data.length; index++) {
 
-      // ✅ Validación por fila
-      if (!row.DNI || !row.APELLIDO || !row.NOMBRES || !row.CONTRASEÑA) {
-        errors.push({
-          dni: row.DNI || "sin DNI",
-          error: "Faltan datos obligatorios"
-        });
-        continue; // no frena todo el proceso
-      }
+      const row = data[index];
+      const excelRowNumber = index + 2; // +2 porque fila 1 es header
 
-      const hashedPassword = await bcrypt.hash(
-        String(row.CONTRASEÑA),
-        10
-      );
+      try {
 
-      const fechaNacimiento = row["FECHA DE NACIMIENTO"]
-        ? new Date(row["FECHA DE NACIMIENTO"])
-        : null;
+        console.log(`Procesando fila ${excelRowNumber}, DNI: ${row.DNI}`);
 
-      let genero = null;
-      if (row.GENERP) {
-        const g = row.GENERP.toUpperCase();
-        if (g === "M") genero = "masculino";
-        if (g === "F") genero = "femenino";
-      }
-
-      const email = `${row.DNI}@alumno.com`;
-
-      bulkOperations.push({
-        updateOne: {
-          filter: { dni: String(row.DNI) },
-          update: {
-            $setOnInsert: {
-              nombre: row.NOMBRES,
-              apellido: row.APELLIDO,
-              dni: String(row.DNI),
-              email,
-              password: hashedPassword,
-              rol: "alumno",
-              legajo: row.LEGAJO || null,
-              libroFolio: row["LIBRO Y FOLIO"] || null,
-              fechaNacimiento,
-              genero
-            }
-          },
-          upsert: true
+        // 🔹 Validación obligatoria
+        if (!row.DNI || !row.APELLIDO || !row.NOMBRES || !row.CONTRASEÑA || !row["CURSO CODE"]) {
+          errors.push({
+            row: excelRowNumber,
+            dni: row.DNI || "sin DNI",
+            error: "Faltan datos obligatorios"
+          });
+          continue;
         }
-      });
-    }
 
-    if (bulkOperations.length === 0) {
-      return { message: "No hay registros válidos para insertar", errors };
-    }
+        const courseCode = String(row["CURSO CODE"]).toUpperCase().trim();
+        const course = await Course.findOne({ code: courseCode });
 
-    const result = await User.bulkWrite(bulkOperations);
+        if (!course) {
+          errors.push({
+            row: excelRowNumber,
+            dni: row.DNI,
+            error: `Curso ${courseCode} no encontrado`
+          });
+          continue;
+        }
+
+        const hashedPassword = await bcrypt.hash(String(row.CONTRASEÑA), 10);
+
+        // 🔹 Fecha de nacimiento
+        let fechaNacimiento = null;
+        if (row["FECHA DE NACIMIENTO"]) {
+          const f = new Date(row["FECHA DE NACIMIENTO"]);
+          fechaNacimiento = isNaN(f.getTime()) ? null : f;
+        }
+
+        // 🔹 Género
+        let genero = null;
+        if (row.GENERO) {
+          const g = row.GENERO.toUpperCase();
+          if (g === "M") genero = "masculino";
+          if (g === "F") genero = "femenino";
+        }
+
+        // 🔹 Email temporal si falta
+        let email = row.EMAIL;
+        if (!email) email = `sinemail_${row.DNI}@fake.com`;
+
+        // 🔹 Legajo temporal si falta
+        let legajo = row.LEGAJO;
+        if (!legajo) legajo = `sinlegajo_${row.DNI}`;
+
+        let student = await User.findOne({ dni: String(row.DNI) });
+        student?.courses || (student && (student.courses = []));
+
+        // ============================================================
+        // 🔹 SI NO EXISTE → CREAR
+        // ============================================================
+        if (!student) {
+
+          student = await User.create({
+            nombre: row.NOMBRES,
+            apellido: row.APELLIDO,
+            dni: String(row.DNI),
+            password: hashedPassword,
+            rol: "alumno",
+            legajo,
+            libroFolio: row["LIBRO Y FOLIO"] || null,
+            fechaNacimiento,
+            genero,
+            email,
+            courses: [{
+              course: course._id,
+              status: "activo",
+              from: new Date()
+            }]
+          });
+
+          insertedCount++;
+
+        } else {
+
+          // ============================================================
+          // 🔹 SI EXISTE → ACTUALIZAR CURSO SI ES NECESARIO
+          // ============================================================
+          const activeCourse = student.courses.find(c => c.status === "activo");
+
+          if (!activeCourse) {
+            student.courses.push({
+              course: course._id,
+              status: "activo",
+              from: new Date()
+            });
+          } else if (activeCourse.course.toString() !== course._id.toString()) {
+            activeCourse.status = "finalizado";
+            activeCourse.to = new Date();
+            student.courses.push({
+              course: course._id,
+              status: "activo",
+              from: new Date()
+            });
+          }
+
+          await student.save();
+          updatedCount++;
+        }
+
+        // ============================================================
+        // 🔹 AGREGAR ALUMNO AL CURSO SI NO ESTÁ
+        // ============================================================
+        course.students || (course.students = []);
+        const existsInCourse = course.students.some(
+          s => s.student.toString() === student._id.toString()
+        );
+
+        if (!existsInCourse) {
+          course.students.push({
+            student: student._id,
+            active: true
+          });
+          await course.save();
+        }
+
+      } catch (err) {
+        console.error(`Fila ${excelRowNumber} falló:`, err);
+        errors.push({
+          row: excelRowNumber,
+          dni: row?.DNI || "sin DNI",
+          error: err.message
+        });
+      }
+    }
 
     return {
-      inserted: result.upsertedCount,
+      inserted: insertedCount,
+      updated: updatedCount,
       errors,
       message: "Carga masiva finalizada"
     };
-  };
-}
+  }
 
-
-/*
-{
-  "_id": {
-    "$oid": "6965b21503a43193d40d4f3f"
-  },
-  "nombre": "Agustín",
-  "apellido": "Ledesma",
-  "email": "ledesmafranco50@gmail.com",
-  "password": "$2b$10$ZJ1Q6dRWZ6/n7As8EXxuye1kHSotxM59vBHP156uECs22xeSARatq",
-  "rol": "superAdmin",
-  "activo": true,
-  "createdAt": {
-    "$date": "2026-01-13T02:46:45.188Z"
-  },
-  "updatedAt": {
-    "$date": "2026-01-31T00:10:59.319Z"
-  },
-  "__v": 1,
-  "curso": null,
-  "division": null,
-  "dni": "41099153",
-  "courses": [],
-  "inasistencias": []
 }
-*/

@@ -16,6 +16,14 @@ const courseSchema = new Schema(
       uppercase: true,
       trim: true
     },
+    modality: {
+      type: String,
+      enum: [
+        "Arte",
+        "Comunicación"
+      ],
+      required: true
+    },
 
     academicYear: {
       type: Number,

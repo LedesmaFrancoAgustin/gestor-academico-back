@@ -1,4 +1,4 @@
-import AcademicYearPeriodConfigService from '../services/academicYearPeriodConfig.services.js';
+import AcademicYearPeriodConfigService from '../services/AcademicYearPeriodConfig.services.js';
 import { createResponse } from "../utils.js";
 
 const academicYearPeriodConfigService = new AcademicYearPeriodConfigService();

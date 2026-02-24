@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';import AcademicYearPeriodConfig from '../daos/mongodb/model/academicYearPeriodConfig.model.js';
-
+import mongoose from 'mongoose';
+import AcademicYearPeriodConfig from '../daos/mongodb/model/AcademicYearPeriodConfig.model.js';
 import { normalizeDateToArgentina } from "../utils.js";
 
 export default class AcademicYearPeriodConfigService {

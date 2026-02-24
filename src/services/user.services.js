@@ -3,26 +3,26 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Usuario from "../daos/mongodb/model/users.model.js";
 
+
 export default class UserService {
 
-  async register({ nombre, apellido, dni, email, password, rol ,curso , division , area}) {
+  async register({ nombre, apellido, dni, email, password, rol, area, legajo, libroFolio, fechaNacimiento, genero }) {
   // 1. Verificar si existe por email o dni
   const exists = await Usuario.findOne({
     $or: [{ email }, { dni }]
   });
 
   if (exists) {
-  const error = new Error("El email o DNI ya está registrado");
-  error.statusCode = 409; // Conflict
-  error.code = "USER_ALREADY_EXISTS";
-  throw error;
-}
+    const error = new Error("El email o DNI ya está registrado");
+    error.statusCode = 409; // Conflict
+    error.code = "USER_ALREADY_EXISTS";
+    throw error;
+  }
 
-
-  // 3. Hash password
+  // 2. Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // 4. Crear usuario
+  // 3. Crear usuario
   const user = await Usuario.create({
     nombre,
     apellido,
@@ -30,31 +30,40 @@ export default class UserService {
     email,
     password: hashedPassword,
     rol,
-    activo: true,
-    area: area,
-    // inasistencias NO se pasan → se inicializa vacío
-    // 🔹 Curso actual (solo si es alumno, para docentes puede quedar null)
-    currentCourse: rol === "alumno" ? {
-      currentClass: curso || null,
-      currentDivision: division || null
-    } : null
+    activo: true,        // siempre activo al crear
+    area: area || null,
+    legajo: rol === "alumno" ? legajo || null : undefined,
+    libroFolio: libroFolio || null,
+    fechaNacimiento: fechaNacimiento || null,
+    genero: genero || null
   });
 
-  // 5. Respuesta controlada (sin password)
+  // 4. Respuesta controlada (sin password)
   return {
     id: user._id,
     nombre: user.nombre,
     apellido: user.apellido,
+    dni: user.dni,
     email: user.email,
     rol: user.rol,
     activo: user.activo,
-    area : user.area,
-    currentCourse: user.currentCourse
+    area: user.area,
+    legajo: user.legajo,
+    libroFolio: user.libroFolio,
+    fechaNacimiento: user.fechaNacimiento,
+    genero: user.genero
   };
 }
 
- async login({ email, password }) {
-  const user = await Usuario.findOne({ email }).select("+password");
+ async login({ identifier, password }) { // 🔹 renombramos email → identifier
+
+  // 🔹 Buscar por email o DNI
+  const user = await Usuario.findOne({
+    $or: [
+      { email: identifier.toLowerCase().trim() }, 
+      { dni: identifier.trim() }
+    ]
+  }).select("+password");
 
   if (!user) {
     throw new Error("Credenciales inválidas");
@@ -64,27 +73,22 @@ export default class UserService {
     throw new Error("Usuario deshabilitado");
   }
 
+  // 🔹 Validar contraseña
   const isValid = await bcrypt.compare(password, user.password);
   if (!isValid) {
     throw new Error("Credenciales inválidas");
   }
 
-  // Access token (corto)
+  // 🔹 Generar Access Token (corto)
   const token = jwt.sign(
-    {
-      id: user._id,
-      rol: user.rol
-    },
+    { id: user._id, rol: user.rol },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES} // corto
+    { expiresIn: process.env.JWT_EXPIRES }
   );
 
-  // Refresh token (largo)
+  // 🔹 Generar Refresh Token (largo)
   const refreshToken = jwt.sign(
-    {
-      id: user._id,
-      rol: user.rol
-    },
+    { id: user._id, rol: user.rol },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: "7d" }
   );
@@ -97,6 +101,7 @@ export default class UserService {
       nombre: user.nombre,
       apellido: user.apellido,
       email: user.email,
+      dni: user.dni,
       rol: user.rol
     }
   };
@@ -145,42 +150,53 @@ async refreshTokenService(refreshToken) {
 }
 
 async getSearchUsers({ limit, page, q, roles }) {
-  console.log("role",roles)
-  
   let filter = {};
 
   // 🔹 Filtro de búsqueda
   if (q) {
     if (!isNaN(q)) {
-      // 🔎 Buscar por DNI
       filter.dni = q;
     } else {
-      // 🔎 Buscar por nombre o apellido
       filter.$or = [
         { nombre: { $regex: q, $options: "i" } },
         { apellido: { $regex: q, $options: "i" } }
       ];
     }
   }
-  // 🔹 Filtrar por rol si viene
-  // 🔹 Filtrar por roles si vienen
-if (roles && roles.length > 0) {
-  filter.rol = {
-    $in: roles.map(role => role.toLowerCase())
-  };
-}
 
+  // 🔹 Filtrar por roles
+  if (roles && roles.length > 0) {
+    filter.rol = { $in: roles.map(role => role.toLowerCase()) };
+  }
 
+  // 🔹 Buscar usuarios y traer solo password excluido
   const users = await Usuario.find(filter)
     .select("-password")
     .limit(limit)
     .skip((page - 1) * limit)
-    .sort({ apellido: 1 });
+    .sort({ apellido: 1 })
+    .populate({
+      path: "courses.course",   // 🔹 hacer populate del course
+      match: { "active": true }, // 🔹 solo cursos activos
+      select: "name modality"
+    })
+    .lean();
+
+  // 🔹 Mapear para que solo devuelva el nombre del curso activo
+  const usersWithActiveCourse = users.map(u => {
+    let activeCourse = u.courses.find(c => c.status === "activo");
+    return {
+      ...u,
+      activeCourse: activeCourse
+        ? { name: activeCourse.course.name, modality: activeCourse.course.modality }
+        : null
+    };
+  });
 
   const total = await Usuario.countDocuments(filter);
 
   return {
-    users,
+    users: usersWithActiveCourse,
     total,
     page,
     limit,
@@ -319,6 +335,32 @@ async changeMyEmail(userId, newEmail) {
   await user.save();
 
   return true;
+}
+
+async deleteUserIdService(userId) {
+  if (!userId) {
+    const error = new Error("ID de usuario requerido");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await Usuario.findById(userId);
+
+  if (!user) {
+    const error = new Error("Usuario no encontrado");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await Usuario.deleteOne({ _id: userId });
+
+  return {
+    _id: user._id,
+    nombre: user.nombre,
+    apellido: user.apellido,
+    email: user.email,
+    dni: user.dni
+  };
 }
 
 

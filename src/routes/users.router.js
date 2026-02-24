@@ -57,7 +57,7 @@ router.delete(
   "/:id",
   authToken,
   authorizeRoles("superAdmin", "admin"),
-  controller.delete
+  controller.deleteUserId
 );
 
 router.patch(

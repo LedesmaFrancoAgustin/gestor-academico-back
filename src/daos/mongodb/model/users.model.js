@@ -38,9 +38,11 @@ const userSchema = new Schema(
 
     email: {
       type: String,
-      required: true,
       unique: true,
-      lowercase: true
+      sparse: true,
+      lowercase: true,
+      trim: true,
+      default: null
     },
 
     password: {
@@ -88,13 +90,6 @@ const userSchema = new Schema(
       type: String,
       default: null,
       trim: true
-    },
-
-    // 🔹 Curso actual
-    currentCourse: {
-      course: { type: Schema.Types.ObjectId, ref: "Course" },
-      currentClass: { type: String },   // Curso actual
-      currentDivision: { type: String } // División actual
     },
 
     // 🔹 Historial de cursos (clave del modelo)
