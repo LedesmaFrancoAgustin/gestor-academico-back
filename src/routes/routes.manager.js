@@ -10,7 +10,7 @@ import teachingAssignmentRouter from "./teachingAssignment.router.js"
 import attendanceRouter from "./attendance.router.js"
 import studentSubjectStatus from "./studentSubjectStatus.router.js"
 import StudentRecourseAssignment from "./studentRecourseAssignment.router.js"
-import academicYearPeriodConfig from "./AcademicYearPeriodConfig.router.js";
+import academicYearPeriodConfig from "./academicYearPeriodConfig.router.js";
 import importRouter from "./importMassive.router.js"
 
 
