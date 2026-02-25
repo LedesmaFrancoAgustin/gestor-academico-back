@@ -184,12 +184,18 @@ async getSearchUsers({ limit, page, q, roles }) {
   // 🔹 Filtro de búsqueda
   if (q) {
     if (!isNaN(q)) {
+      // Buscar por DNI
       filter.dni = q;
     } else {
-      filter.$or = [
-        { nombre: { $regex: q, $options: "i" } },
-        { apellido: { $regex: q, $options: "i" } }
-      ];
+      // Dividir por espacios y armar regex para nombre y apellido
+      const terms = q.trim().split(/\s+/); // ["Lopez","Juana"]
+
+      filter.$and = terms.map(term => ({
+        $or: [
+          { nombre: { $regex: term, $options: "i" } },
+          { apellido: { $regex: term, $options: "i" } }
+        ]
+      }));
     }
   }
 
@@ -205,15 +211,15 @@ async getSearchUsers({ limit, page, q, roles }) {
     .skip((page - 1) * limit)
     .sort({ apellido: 1 })
     .populate({
-      path: "courses.course",   // 🔹 hacer populate del course
-      match: { "active": true }, // 🔹 solo cursos activos
+      path: "courses.course",
+      match: { active: true }, // solo cursos activos
       select: "name modality"
     })
     .lean();
 
-  // 🔹 Mapear para que solo devuelva el nombre del curso activo
+  // 🔹 Mapear para que solo devuelva el curso activo
   const usersWithActiveCourse = users.map(u => {
-    let activeCourse = u.courses.find(c => c.status === "activo");
+    const activeCourse = u.courses.find(c => c.status === "activo");
     return {
       ...u,
       activeCourse: activeCourse

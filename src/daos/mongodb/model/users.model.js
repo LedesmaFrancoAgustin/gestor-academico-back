@@ -20,7 +20,7 @@ const userCourseSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["activo", "finalizado", "abandonado"],
+      enum: ["activo", "finalizado", "abandonado", "cambiado"],
       default: "activo"
     },
     from: { type: Date },

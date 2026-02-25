@@ -45,7 +45,7 @@ export default class CursoService {
   }
 
   const courses = await Course.find(filter)
-    .sort({ nombre: 1 })
+    .sort({ active: -1, name: 1 })
     .limit(Number(limit))
     .skip(Number(skip));
 
@@ -200,50 +200,66 @@ async getCursoById(id) {
   };
 }
   async addStudentToCourse(courseId, studentId) {
-    const course = await Course.findById(courseId);
-    if (!course) {
-      throw new Error("Curso no encontrado");
-    }
+  const course = await Course.findById(courseId);
+  if (!course) {
+    throw new Error("Curso no encontrado");
+  }
 
-    // Verificar si el estudiante ya está en el curso
-    const alreadyAdded = course.students.some(
-      s => s.student.toString() === studentId
-    );
+  const user = await User.findById(studentId);
+  if (!user) {
+    throw new Error("Alumno no encontrado");
+  }
 
-    if (alreadyAdded) {
-      throw new Error("El estudiante ya está agregado a este curso");
-    }
+  // ==============================
+  // 1️⃣ Verificar si ya está en el curso
+  // ==============================
+  const alreadyAdded = course.students.some(
+    s => s.student.toString() === studentId
+  );
 
-    // Agregar estudiante
-    await Course.updateOne(
+  if (alreadyAdded) {
+    throw new Error("El estudiante ya está agregado a este curso");
+  }
+
+  // ==============================
+  // 2️⃣ Finalizar curso activo anterior (si existe)
+  // ==============================
+  const activeCourse = user.courses.find(c => c.status === "activo");
+
+  if (activeCourse) {
+    activeCourse.status = "finalizado";
+    activeCourse.to = new Date();
+  }
+
+  // ==============================
+  // 3️⃣ Agregar nuevo curso al historial
+  // ==============================
+  user.courses.push({
+    course: courseId,
+    status: "activo",
+    from: new Date(),
+    to: null
+  });
+
+  await user.save();
+
+  // ==============================
+  // 4️⃣ Agregar estudiante al curso
+  // ==============================
+  await Course.updateOne(
     { _id: courseId },
     {
       $push: {
-        students: { student: studentId, active: true }
-      }
-    }
-    
-  );
-
-  await User.updateOne(
-      { _id: studentId },
-      {
-        $push: {
-          courses: {
-            course: courseId,
-            status: "activo",
-            from: new Date()
-          }
+        students: {
+          student: studentId,
+          active: true
         }
       }
-    );
+    }
+  );
 
-
-    return {
-      courseId: course._id,
-      studentId
-    };
-  }
+  return { message: "Alumno agregado correctamente al curso" };
+}
 
   async addSubjectToCourse(courseId, { subjectId, teacherId = null }) {
     // ⚠️ Verificar que exista el curso
@@ -464,25 +480,74 @@ async removeSubjectFromCourse(courseId, subjectId) {
   return course;
 }
 
-//❌ Eliminar alumno del curso sin dejar registro
+// ❌ Eliminar alumno del curso sin dejar registro (error de carga)
 async rollbackStudentFromCourse(courseId, studentId) {
+
   const course = await Course.findById(courseId);
   if (!course) throw new Error("Curso no encontrado");
 
   const student = await User.findById(studentId);
   if (!student) throw new Error("Alumno no encontrado");
 
-  // Quitar del curso
+  // ==============================
+  // 1️⃣ Verificar que esté en el curso
+  // ==============================
+  const existsInCourse = course.students.some(
+    s => s.student.toString() === studentId
+  );
+
+  if (!existsInCourse) {
+    throw new Error("El alumno no está asignado a este curso");
+  }
+
+  // ==============================
+  // 2️⃣ Eliminar del Course
+  // ==============================
   await Course.updateOne(
     { _id: courseId },
     { $pull: { students: { student: studentId } } }
   );
 
-  // Quitar del usuario
+  // ==============================
+  // 3️⃣ Verificar si era el curso activo del alumno
+  // ==============================
+  const removedCourse = student.courses.find(
+    c => c.course.toString() === courseId
+  );
+
+  const wasActive = removedCourse?.status === "activo";
+
+  // ==============================
+  // 4️⃣ Eliminar historial del usuario
+  // ==============================
   await User.updateOne(
     { _id: studentId },
     { $pull: { courses: { course: courseId } } }
   );
+
+  // ==============================
+  // 5️⃣ Si era activo, reactivar el anterior (si existe)
+  // ==============================
+  if (wasActive) {
+
+    const updatedStudent = await User.findById(studentId);
+
+    const lastCourse = updatedStudent.courses
+      .sort((a, b) => new Date(b.from) - new Date(a.from))[0];
+
+    if (lastCourse) {
+      lastCourse.status = "activo";
+      lastCourse.to = null;
+
+      await updatedStudent.save();
+
+      // También reactivar en el Course
+      await Course.updateOne(
+        { _id: lastCourse.course, "students.student": studentId },
+        { $set: { "students.$.active": true } }
+      );
+    }
+  }
 
   return { courseId, studentId, rollback: true };
 }
