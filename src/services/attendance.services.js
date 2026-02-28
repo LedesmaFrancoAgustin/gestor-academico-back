@@ -9,23 +9,31 @@ export default class AttendanceService {
 /* ====================================
    🔒 Crear / Actualizar / Borrar asistencia
 ==================================== */
-async  createAttendanceService(data) {
+/* ====================================
+   🔒 Crear / Actualizar / Borrar asistencia
+==================================== */
+async createAttendanceService(data) {
   try {
     const {
       userId,
       courseId,
       academicYear,
       trimester,
-      date,                 // 👈 ahora viene como string
+      date,
+      attendanceType = 'regular', // 👈 NUEVO
       attendanceStatus,
       late,
       justification,
       notes
     } = data;
 
-    // 🔒 Validación mínima defensiva
+    // 🔒 Validación básica
     if (!date || typeof date !== 'string') {
       throw new Error('Fecha inválida');
+    }
+
+    if (!attendanceType) {
+      throw new Error('Tipo de asistencia requerido');
     }
 
     // 🧹 DELETE (cuando se borra asistencia)
@@ -35,11 +43,56 @@ async  createAttendanceService(data) {
         courseId,
         academicYear,
         trimester,
-        date
+        date,
+        attendanceType // 👈 IMPORTANTE
       });
 
-      console.log("DELETED DOC:", deleted);
       return null;
+    }
+
+    /* ===============================
+       🔒 NORMALIZACIÓN DE DATOS
+    =============================== */
+
+    let normalizedLate = {
+      isLate: false,
+      minutes: null
+    };
+
+    let normalizedJustification = {
+      isJustified: false,
+      certificateUrl: null
+    };
+
+    // 🟢 PRESENTE
+    if (attendanceStatus === 'present') {
+      normalizedLate = {
+        isLate: late?.isLate ?? false,
+        minutes: late?.isLate ? late?.minutes ?? null : null
+      };
+
+      // 🔥 Regla institucional:
+      // Presente NO puede estar justificado
+      normalizedJustification = {
+        isJustified: false,
+        certificateUrl: null
+      };
+    }
+
+    // 🔴 AUSENTE
+    if (attendanceStatus === 'absent') {
+
+      // 🔥 Regla institucional:
+      // Ausente NO puede estar tarde
+      normalizedLate = {
+        isLate: false,
+        minutes: null
+      };
+
+      normalizedJustification = {
+        isJustified: justification?.isJustified ?? false,
+        certificateUrl: justification?.certificateUrl ?? null
+      };
     }
 
     // 🔁 UPSERT
@@ -49,19 +102,15 @@ async  createAttendanceService(data) {
         courseId,
         academicYear,
         trimester,
-        date
+        date,
+        attendanceType // 👈 AHORA FORMA PARTE DEL ÍNDICE
       },
       {
         $set: {
           attendanceStatus,
-          late: {
-            isLate: late?.isLate ?? false,
-            minutes: late?.isLate ? late?.minutes ?? null : null
-          },
-          justification: {
-            isJustified: justification?.isJustified ?? false,
-            certificateUrl: justification?.certificateUrl ?? null
-          },
+          attendanceType,
+          late: normalizedLate,
+          justification: normalizedJustification,
           notes: notes ?? ''
         }
       },
@@ -76,19 +125,23 @@ async  createAttendanceService(data) {
   } catch (error) {
     throw error;
   }
-} 
-
+}
 /* ====================================
    🔒 Crear / Actualizar / Borrar asistencia / mASIVO
 ==================================== */
-async createAttendanceMassiveService({ courseId, academicYear, trimester, changes }) {
+async createAttendanceMassiveService({
+  courseId,
+  academicYear,
+  trimester,
+  changes,
+  attendanceType = "regular" // 👈 NUEVO
+}) {
 
   if (!Array.isArray(changes)) {
     return { message: "changes debe ser un array" };
   }
 
   const operations = [];
-
   const courseObjectId = new mongoose.Types.ObjectId(courseId);
 
   for (const change of changes) {
@@ -99,20 +152,20 @@ async createAttendanceMassiveService({ courseId, academicYear, trimester, change
       attendanceStatus,
       late,
       justification,
-      notes,
-      action = "update"
+      notes
     } = change;
 
     if (!userId || !date) continue;
-
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!attendanceType) continue;
 
     const filter = {
       userId: new mongoose.Types.ObjectId(userId),
       courseId: courseObjectId,
       academicYear,
       trimester,
-      date
+      date,
+      attendanceType // 👈 AHORA FORMA PARTE DEL FILTRO
     };
 
     /*
@@ -120,43 +173,80 @@ async createAttendanceMassiveService({ courseId, academicYear, trimester, change
     DELETE
     ======================
     */
-    if (action === "delete") {
-
+    if (!attendanceStatus) {
       operations.push({
         deleteOne: { filter }
       });
-
       continue;
+    }
+
+    if (!["present", "absent"].includes(attendanceStatus)) continue;
+
+    /*
+    ===============================
+    🔒 NORMALIZACIÓN (IGUAL QUE INDIVIDUAL)
+    ===============================
+    */
+
+    let normalizedLate = {
+      isLate: false,
+      minutes: null
+    };
+
+    let normalizedJustification = {
+      isJustified: false,
+      certificateUrl: null
+    };
+
+    // 🟢 PRESENTE
+    if (attendanceStatus === "present") {
+
+      normalizedLate = {
+        isLate: late?.isLate ?? false,
+        minutes: late?.isLate ? late?.minutes ?? null : null
+      };
+
+      normalizedJustification = {
+        isJustified: false,
+        certificateUrl: null
+      };
+    }
+
+    // 🔴 AUSENTE
+    if (attendanceStatus === "absent") {
+
+      normalizedLate = {
+        isLate: false,
+        minutes: null
+      };
+
+      normalizedJustification = {
+        isJustified: justification?.isJustified ?? false,
+        certificateUrl: justification?.certificateUrl ?? null
+      };
     }
 
     /*
     ======================
-    UPDATE
+    UPSERT
     ======================
     */
-    if (action === "update") {
 
-      if (attendanceStatus &&
-        !["present", "absent"].includes(attendanceStatus)) continue;
-
-      operations.push({
-        updateOne: {
-          filter,
-          update: {
-            $set: {
-              ...(attendanceStatus && { attendanceStatus }),
-
-              late: late ?? { isLate: false, minutes: null },
-
-              justification: justification ?? { isJustified: false },
-
-              notes: notes ?? ""
-            }
-          },
-          upsert: true
-        }
-      });
-    }
+    operations.push({
+      updateOne: {
+        filter,
+        update: {
+          $set: {
+            attendanceStatus,
+            attendanceType,
+            late: normalizedLate,
+            justification: normalizedJustification,
+            notes: notes ?? ""
+          }
+        },
+        upsert: true
+      }
+    });
   }
 
   if (!operations.length) {
@@ -167,7 +257,6 @@ async createAttendanceMassiveService({ courseId, academicYear, trimester, change
 
   return result;
 }
-
 /* ====================================
   🔓 Obtener inasistencias de un curso por mes
 ==================================== */
@@ -221,6 +310,8 @@ async getByCourseFromMonthService(courseId, year, month) {
       absents: userAttendances.filter(a => a.attendanceStatus === "absent").length,
       details: userAttendances.map(a => ({
         date: a.date,
+        attendanceType : a.attendanceType,
+        trimester: a.trimester,
         status: a.attendanceStatus,
         notes: a.notes,
         late: a.late,

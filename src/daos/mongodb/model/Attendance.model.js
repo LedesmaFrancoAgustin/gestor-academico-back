@@ -26,7 +26,7 @@ const attendanceSchema = new Schema({
   date: {
     type: String,
     required: true,
-    match: /^\d{4}-\d{2}-\d{2}$/
+    match: /^\d{4}-\d{2}-\d{2}$/  //YYYY-MM-DD
   },
 
   // 🔹 NUEVO CAMPO
@@ -48,12 +48,10 @@ const attendanceSchema = new Schema({
       type: Boolean,
       default: false
     },
-    minutes: {
+     minutes: {
       type: Number,
       min: 1,
-      required: function () {
-        return this.late.isLate && this.attendanceStatus === 'present';
-      }
+      default: null
     }
   },
 

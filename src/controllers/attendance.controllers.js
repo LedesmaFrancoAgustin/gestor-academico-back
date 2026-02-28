@@ -46,8 +46,12 @@ export default class AttendanceController {
           return createResponse(res, 400, null, "No puede llegar tarde si está ausente");
         }
 
-        if (data.late?.isLate && (!data.late.minutes || data.late.minutes < 1)) {
-          return createResponse(res, 400, null, "Debe indicar los minutos si llegó tarde");
+        if (
+          data.late?.isLate &&
+          data.late.minutes !== undefined &&
+          data.late.minutes < 1
+        ) {
+          return createResponse(res, 400, null, "Los minutos deben ser mayores a 0");
         }
 
         // 🔁 UPSERT
@@ -62,33 +66,49 @@ export default class AttendanceController {
 
   // 🔒 Crear / Actualizar / Borrar asistencia MASIVA
 createAttendanceMassive = async (req, res, next) => {
-  try {
-    const { courseId, academicYear, trimester, changes } = req.body;
-     console.log("courseId: ",courseId)
-      console.log("academicYear: ",academicYear)
-       console.log("trimester: ",trimester)
-   console.log("changes: ",changes)
-    // 🔒 Validaciones base
-    if (!courseId || !academicYear || !trimester || !Array.isArray(changes)) {
-      return createResponse(res, 400, null, "Datos inválidos");
+    try {
+      const {
+        courseId,
+        academicYear,
+        trimester,
+        attendanceType = "regular", // 👈 NUEVO
+        changes
+      } = req.body;
+
+      console.log("courseId:", courseId);
+      console.log("academicYear:", academicYear);
+      console.log("trimester:", trimester);
+      console.log("attendanceType:", attendanceType);
+      console.log("changes:", changes);
+
+      // 🔒 Validaciones base
+      if (
+        !courseId ||
+        !academicYear ||
+        !trimester ||
+        !attendanceType ||
+        !Array.isArray(changes)
+      ) {
+        return createResponse(res, 400, null, "Datos inválidos");
+      }
+
+      if (changes.length === 0) {
+        return createResponse(res, 400, null, "No hay cambios para guardar");
+      }
+
+      const result = await this.service.createAttendanceMassiveService({
+        courseId,
+        academicYear,
+        trimester,
+        attendanceType, // 👈 AHORA SE ENVÍA
+        changes
+      });
+
+      return createResponse(res, 200, result, "Asistencia guardada correctamente");
+
+    } catch (error) {
+      next(error);
     }
-
-    if (changes.length === 0) {
-      return createResponse(res, 400, null, "No hay cambios para guardar");
-    }
-
-    const result = await this.service.createAttendanceMassiveService({
-      courseId,
-      academicYear,
-      trimester,
-      changes
-    });
-
-    return createResponse(res, 200, result, "Asistencia guardada correctamente");
-
-  } catch (error) {
-    next(error);
-  }
 };
 
 
