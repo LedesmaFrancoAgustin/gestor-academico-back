@@ -288,6 +288,31 @@ async getCursoById(id) {
       teacherId
     };
   }
+    // Service para obtener cursos asignados a un usuario (preceptor) por año
+  async getAssignedToCourseService(usersId, academicYear) {
+    // Armo el filtro inicial
+    const filter = {
+      active: true, // solo cursos activos
+      users: {
+        $elemMatch: {
+          user: usersId,       // usuario en el array users
+          role: "preceptor"    // solo rol preceptor
+        }
+      }
+    };
+
+    // Si me pasan el año, lo agrego al filtro
+    if (academicYear) {
+      filter.academicYear = Number(academicYear);
+    }
+
+    // Consulta a Mongo
+    const courses = await Course.find(filter)
+      .select("name code academicYear modality") // solo campos necesarios
+      .lean(); // devuelve plain JS object, más rápido
+
+    return courses;
+  }
   async getCourseUsers(courseId) {
     const course = await Course.findById(courseId)
       .select("users")

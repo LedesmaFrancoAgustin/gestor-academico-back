@@ -34,6 +34,13 @@ router.get(
   authorizeRoles("superAdmin", "admin"),
   controller.getCursoById
 );
+// Obtener curos de asignasod en users
+router.get(
+  "/:usersId/AssignedToCourse",
+  authToken,
+  authorizeRoles("superAdmin", "admin","preceptor"),
+  controller.getAssignedToCourse
+);
 
 router.get(
   "/:courseId/users",

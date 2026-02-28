@@ -46,6 +46,19 @@ export default class CursoController extends Controllers{
       next(error);
     }
   };
+
+   getAssignedToCourse = async (req, res, next) => {
+    try {
+      const { usersId } = req.params;
+      const { year } = req.query;
+
+      const users = await this.service.getAssignedToCourseService(usersId, year);
+
+      createResponse(res, 200, users);
+    } catch (error) {
+      next(error);
+    }
+  };
   
   getCourseUsers = async (req, res, next) => {
   try {
