@@ -350,7 +350,7 @@ async getCursoById(id) {
   async getCourseStudents(courseId) {
     const course = await Course.findById(courseId)
       .select("students")
-      .populate("students.student", "nombre apellido genero email dni rol activo courses");
+      .populate("students.student", "nombre apellido genero email dni rol legajo fechaNacimiento libroFolio activo courses");
 
     if (!course) {
       throw new Error("Curso no encontrado");
