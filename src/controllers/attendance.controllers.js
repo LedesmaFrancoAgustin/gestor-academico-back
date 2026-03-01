@@ -152,6 +152,47 @@ createAttendanceMassive = async (req, res, next) => {
     }
   };
 
+  // 🔓 Obtener total de inasistencias por meses anteriores 
+  getCoursePrevious = async (req, res, next) => {
+    try {
+      const { courseId } = req.params;
+      const { year, month } = req.query;
+
+      // ❗ Validaciones básicas
+      if (!courseId || !year || !month) {
+        return createResponse(res, 400, null, "Todos los campos son obligatorios");
+      }
+
+      // 📅 Validar año
+      if (!/^\d{4}$/.test(year)) {
+        return createResponse(res, 400, null, "Año inválido");
+      }
+
+      // 📅 Validar mes
+      const monthNumber = parseInt(month);
+      if (isNaN(monthNumber) || monthNumber < 1 || monthNumber > 12) {
+        return createResponse(res, 400, null, "Mes inválido");
+      }
+
+      const records = await this.service.getCoursePreviousService(
+        courseId,
+        year,
+        monthNumber
+      );
+
+      return createResponse(
+        res,
+        200,
+        records,
+        "Inasistencias obtenidas correctamente"
+      );
+
+    } catch (error) {
+      next(error);
+    }
+  };
+
+
 
 
   /// Revisarr -----------------------------------------------------

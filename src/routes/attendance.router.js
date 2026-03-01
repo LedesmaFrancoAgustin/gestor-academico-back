@@ -63,6 +63,16 @@ router.get(
   authToken,
   controller.getUserFromYear
 );
+/* 🔓 CUALQUIER USUARIO AUTENTICADO
+   Obtener inasistencias total de alumno de meses anteriores x curso
+   GET /api/attendance/user/:userId
+   Opcional query: ?courseId=xxx&trimester=1&academicYear=2025
+*/
+router.get(
+  "/:courseId/previous",
+  authToken,
+  controller.getCoursePrevious
+);
 
 
 

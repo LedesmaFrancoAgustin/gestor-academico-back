@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Attendance from '../daos/mongodb/model/Attendance.model.js';
 import User from "../daos/mongodb/model/users.model.js";
+import moment from "moment";
 //import {normalizeDate} from "../utils.js";
 
 export default class AttendanceService {
@@ -321,6 +322,108 @@ async getByCourseFromMonthService(courseId, year, month) {
   });
 
   return result;
+}
+
+/* ====================================
+  🔓 Obtener total de inasistencias por meses anteriores 
+==================================== */
+async  getCoursePreviousService(courseId, year, month) {
+  if (!courseId || !year || !month) {
+    throw new Error("Faltan parámetros");
+  }
+
+  const monthNumber = parseInt(month);
+
+  if (monthNumber <= 1) {
+    return []; // no hay meses anteriores
+  }
+
+  const startMonth = 1;
+  const endMonth = monthNumber - 1;
+
+  const startDate = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+  const endDate = moment(`${year}-${String(endMonth).padStart(2, "0")}-01`)
+    .endOf("month")
+    .format("YYYY-MM-DD");
+
+  const aggregation = await Attendance.aggregate([
+    {
+      $match: {
+        courseId: new mongoose.Types.ObjectId(courseId),
+        academicYear: year,
+        date: { $gte: startDate, $lte: endDate }
+      }
+    },
+    {
+      $addFields: {
+        absenceValue: {
+          $switch: {
+            branches: [
+              // physical_education ausente = 0.5
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$attendanceType", "physical_education"] },
+                    { $eq: ["$attendanceStatus", "absent"] }
+                  ]
+                },
+                then: 0.5
+              },
+              // regular ausente con justification = false = 1
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$attendanceType", "regular"] },
+                    { $eq: ["$attendanceStatus", "absent"] },
+                    { $eq: ["$justification.isJustified", false] }
+                  ]
+                },
+                then: 1
+              },
+              // regular present con late = true = 0.25
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$attendanceType", "regular"] },
+                    { $eq: ["$attendanceStatus", "present"] },
+                    { $eq: ["$late.isLate", true] }
+                  ]
+                },
+                then: 0.25
+              }
+            ],
+            default: 0
+          }
+        }
+      }
+    },
+    {
+      $group: {
+        _id: "$userId",
+        totalWeightedAbsences: { $sum: "$absenceValue" }
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "user"
+      }
+    },
+    { $unwind: "$user" },
+    {
+      $project: {
+        _id: 0,
+        userId: "$user._id",
+        name: "$user.nombre",
+        lastname: "$user.apellido",
+        totalWeightedAbsences: 1
+      }
+    }
+  ]);
+
+  return aggregation;
 }
 
   /* ====================================
