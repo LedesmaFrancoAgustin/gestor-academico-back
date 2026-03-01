@@ -278,6 +278,7 @@ async getByCourseFromMonthService(courseId, year, month) {
 
   const attendances = await Attendance.find({
     courseId: new mongoose.Types.ObjectId(courseId),
+    academicYear: year,
     date: {
       $gte: startDate,
       $lt: nextMonth
@@ -327,7 +328,8 @@ async getByCourseFromMonthService(courseId, year, month) {
 /* ====================================
   🔓 Obtener total de inasistencias por meses anteriores 
 ==================================== */
-async  getCoursePreviousService(courseId, year, month) {
+async getCoursePreviousService(courseId, year, month) {
+
   if (!courseId || !year || !month) {
     throw new Error("Faltan parámetros");
   }
@@ -342,6 +344,7 @@ async  getCoursePreviousService(courseId, year, month) {
   const endMonth = monthNumber - 1;
 
   const startDate = `${year}-${String(startMonth).padStart(2, "0")}-01`;
+
   const endDate = moment(`${year}-${String(endMonth).padStart(2, "0")}-01`)
     .endOf("month")
     .format("YYYY-MM-DD");
@@ -359,17 +362,8 @@ async  getCoursePreviousService(courseId, year, month) {
         absenceValue: {
           $switch: {
             branches: [
-              // physical_education ausente = 0.5
-              {
-                case: {
-                  $and: [
-                    { $eq: ["$attendanceType", "physical_education"] },
-                    { $eq: ["$attendanceStatus", "absent"] }
-                  ]
-                },
-                then: 0.5
-              },
-              // regular ausente con justification = false = 1
+
+              // 🔴 REGULAR AUSENTE (NO JUSTIFICADO) = 1
               {
                 case: {
                   $and: [
@@ -380,7 +374,8 @@ async  getCoursePreviousService(courseId, year, month) {
                 },
                 then: 1
               },
-              // regular present con late = true = 0.25
+
+              // 🟡 REGULAR PRESENTE TARDE = 0.25
               {
                 case: {
                   $and: [
@@ -390,7 +385,20 @@ async  getCoursePreviousService(courseId, year, month) {
                   ]
                 },
                 then: 0.25
+              },
+
+              // 🔴 EDUCACIÓN FÍSICA AUSENTE (NO JUSTIFICADO) = 0.5
+              {
+                case: {
+                  $and: [
+                    { $eq: ["$attendanceType", "physical_education"] },
+                    { $eq: ["$attendanceStatus", "absent"] },
+                    { $eq: ["$justification.isJustified", false] }
+                  ]
+                },
+                then: 0.5
               }
+
             ],
             default: 0
           }
@@ -418,7 +426,7 @@ async  getCoursePreviousService(courseId, year, month) {
         userId: "$user._id",
         name: "$user.nombre",
         lastname: "$user.apellido",
-        totalWeightedAbsences: 1
+        totalWeightedAbsences: { $round: ["$totalWeightedAbsences", 2] }
       }
     }
   ]);

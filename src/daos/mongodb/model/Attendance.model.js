@@ -87,6 +87,12 @@ attendanceSchema.index(
   { unique: true }
 );
 
+attendanceSchema.index({
+  courseId: 1,
+  academicYear: 1,
+  date: 1
+});
+
 // 🔒 VALIDACIÓN DE COHERENCIA
 attendanceSchema.pre("save", function(next) {
 

@@ -1,7 +1,9 @@
 import xlsx from "xlsx";
 import bcrypt from "bcrypt";
+import { parse } from "csv-parse/sync";
 import User from "../daos/mongodb/model/users.model.js";
 import Course from "../daos/mongodb/model/course.model.js";
+
 
 export default class ImportMassiveService {
 
@@ -166,4 +168,88 @@ export default class ImportMassiveService {
     };
   }
 
+  bulkUpdateFechaNacimientoService = async (file) => {
+
+    if (!file) {
+      throw new Error("No se envió ningún archivo");
+    }
+
+    // Convertimos buffer a string y eliminamos BOM si existe
+    const csvString = file.buffer
+      .toString("utf-8")
+      .replace(/^\uFEFF/, "");
+
+    // Detectar delimitador automáticamente (; o ,)
+    const delimiter = csvString.includes(";") ? ";" : ",";
+
+    // Parsear CSV
+    const records = parse(csvString, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      delimiter
+    });
+
+    if (!records.length) {
+      throw new Error("El archivo está vacío o mal formateado");
+    }
+
+    const bulkOps = [];
+    let ignorados = 0;
+
+    for (const row of records) {
+
+      const dni = row.dni?.toString().trim();
+      const fechaNacimiento = row.fechaNacimiento?.toString().trim();
+
+      // Ignorar si falta DNI o fecha
+      if (!dni || !fechaNacimiento) {
+        ignorados++;
+        continue;
+      }
+
+      // Validar formato DD/MM/YYYY
+      const [day, month, year] = fechaNacimiento.split("/");
+
+      if (!day || !month || !year) {
+        ignorados++;
+        continue;
+      }
+
+      const fecha = new Date(Date.UTC(year, month - 1, day));
+
+      // Validar que la fecha sea válida
+      if (isNaN(fecha.getTime())) {
+        ignorados++;
+        continue;
+      }
+
+      bulkOps.push({
+        updateOne: {
+          filter: { dni },
+          update: { $set: { fechaNacimiento: fecha } }
+        }
+      });
+    }
+
+    if (!bulkOps.length) {
+      return {
+        message: "No hay registros válidos para actualizar",
+        totalRegistros: records.length,
+        actualizados: 0,
+        ignorados
+      };
+    }
+
+    const result = await User.bulkWrite(bulkOps, { ordered: false });
+
+    return {
+      message: "Actualización masiva completada",
+      totalRegistros: records.length,
+      actualizados: result.modifiedCount,
+      ignorados
+    };
+  };
 }
+
+

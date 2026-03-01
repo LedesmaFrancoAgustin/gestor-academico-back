@@ -18,5 +18,21 @@ export default class PdfController{
   }
 };
 
+bulkUpdateFechaNacimiento = async (req, res) => {
+  console.log("FILE:", req.file);
+  console.log("BODY:", req.body);
+
+  try {
+    const result = await this.service.bulkUpdateFechaNacimientoService(req.file);
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Error en la carga masiva",
+      error: error.message
+    });
+  }
+};
+
 
 }

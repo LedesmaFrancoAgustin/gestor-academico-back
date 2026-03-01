@@ -15,5 +15,14 @@ router.post("/students",
     controller.createMassiveStudets
     );
 
+    // 🔓 Público
+router.post("/bulk-update-fecha-nacimiento",
+    authToken,
+    authorizeRoles("superAdmin","admin"),
+    upload.single("file"),
+    controller.bulkUpdateFechaNacimiento
+    );
+
+
 
 export default router;
