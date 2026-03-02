@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import User from "../daos/mongodb/model/users.model.js";
 import Course from "../daos/mongodb/model/course.model.js";
 import Subject from "../daos/mongodb/model/subject.model.js";
@@ -68,5 +69,44 @@ export default class DashboardService {
     academicYears
   };
 }
+
+   async  getStatsPreceptorDashboardService(idPreceptor) {
+
+    if (!idPreceptor || !/^[0-9a-fA-F]{24}$/.test(idPreceptor)) {
+      throw new Error("Se requiere un ID válido del preceptor");
+    }
+
+    const preceptorObjectId = new mongoose.Types.ObjectId(idPreceptor); // 🔹 con 'new'
+
+    // Contar cursos activos
+    const coursesResult = await Course.aggregate([
+      {
+        $match: {
+          active: true,
+          users: { $elemMatch: { user: preceptorObjectId} }
+        }
+      },
+      { $count: "totalCourses" }
+    ]);
+
+    // Contar alumnos activos
+    const studentsResult = await Course.aggregate([
+      {
+        $match: {
+          active: true,
+          users: { $elemMatch: { user: preceptorObjectId} }
+        }
+      },
+      { $project: { students: 1 } },
+      { $unwind: "$students" },
+      { $match: { "students.active": true } },
+      { $count: "totalStudents" }
+    ]);
+
+    return {
+      courses: coursesResult[0]?.totalCourses || 0,
+      students: studentsResult[0]?.totalStudents || 0
+    };
+  }
 
 }

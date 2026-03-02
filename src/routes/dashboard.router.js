@@ -23,5 +23,13 @@ router.get(
     controller.getStatsTeacher
 );
 
+// 🔒 Obtener estadísticas del dashboard / Cursos activos del preceptor // alumnos
+router.get(
+    "/stats/:idPreceptor",
+    authToken,
+    authorizeRoles("superAdmin", "admin", "preceptor"),
+    controller.getStatsPreceptorDashboard
+);
+
 
 export default router;

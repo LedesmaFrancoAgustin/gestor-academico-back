@@ -35,4 +35,19 @@ export default class DashboardController extends Controllers {
       next(error);
     }
   };
+
+     // 🔹 Obtener estadísticas del dashboard / Cursos activos del preceptor
+  getStatsPreceptorDashboard = async (req, res, next) => {
+    try {
+
+      const {idPreceptor} = req.params;
+      if (!idPreceptor) throw new Error("No se envió el ID del preceptor");
+      
+      const stats = await dashboardService.getStatsPreceptorDashboardService(idPreceptor);
+
+      createResponse(res, 200, stats);
+    } catch (error) {
+      next(error);
+    }
+  };
 }
