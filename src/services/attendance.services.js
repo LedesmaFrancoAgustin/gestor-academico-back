@@ -128,15 +128,9 @@ async createAttendanceService(data) {
   }
 }
 /* ====================================
-   🔒 Crear / Actualizar / Borrar asistencia / mASIVO
+   🔒 Crear / Actualizar / Borrar asistencia MASIVA
 ==================================== */
-async createAttendanceMassiveService({
-  courseId,
-  academicYear,
-  trimester,
-  changes,
-  attendanceType = "regular" // 👈 NUEVO
-}) {
+async createAttendanceMassiveService({courseId,academicYear,month, changes }) {       // 🔹 reemplaza trimester
 
   if (!Array.isArray(changes)) {
     return { message: "changes debe ser un array" };
@@ -145,29 +139,21 @@ async createAttendanceMassiveService({
   const operations = [];
   const courseObjectId = new mongoose.Types.ObjectId(courseId);
 
+  const allowedTypes = ["regular", "physical_education"];
+
   for (const change of changes) {
+    const { studentId, day, attendanceType, attendanceStatus, late, justified, notes } = change;
 
-    const {
-      userId,
-      date,
-      attendanceStatus,
-      late,
-      justification,
-      notes
-    } = change;
+    // ✅ Validar tipo permitido
+    if (!allowedTypes.includes(attendanceType)) continue; // ignorar cambios inválidos
 
-    if (!userId || !date) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    if (!attendanceType) continue;
+    // Resto de tus validaciones existentes
+    if (!studentId || !day) continue;
+    if (day < 1 || day > 31) continue;
+    
 
-    const filter = {
-      userId: new mongoose.Types.ObjectId(userId),
-      courseId: courseObjectId,
-      academicYear,
-      trimester,
-      date,
-      attendanceType // 👈 AHORA FORMA PARTE DEL FILTRO
-    };
+    const studentObjectId = new mongoose.Types.ObjectId(studentId);
+    const key = `${day}_${attendanceType}`;
 
     /*
     ======================
@@ -176,54 +162,36 @@ async createAttendanceMassiveService({
     */
     if (!attendanceStatus) {
       operations.push({
-        deleteOne: { filter }
+        updateOne: {
+          filter: { studentId: studentObjectId, courseId: courseObjectId, academicYear, month },
+          update: { $unset: { [`records.${key}`]: "" } }
+        }
       });
       continue;
     }
 
     if (!["present", "absent"].includes(attendanceStatus)) continue;
-
     /*
     ===============================
-    🔒 NORMALIZACIÓN (IGUAL QUE INDIVIDUAL)
+    🔒 NORMALIZACIÓN
     ===============================
     */
+    let normalizedLate = { isLate: false, minutes: null };
+    let normalizedJustified = { isJustified: false, certificateUrl: null };
 
-    let normalizedLate = {
-      isLate: false,
-      minutes: null
-    };
-
-    let normalizedJustification = {
-      isJustified: false,
-      certificateUrl: null
-    };
-
-    // 🟢 PRESENTE
     if (attendanceStatus === "present") {
-
       normalizedLate = {
         isLate: late?.isLate ?? false,
         minutes: late?.isLate ? late?.minutes ?? null : null
       };
-
-      normalizedJustification = {
-        isJustified: false,
-        certificateUrl: null
-      };
+      normalizedJustified = { isJustified: false, certificateUrl: null };
     }
 
-    // 🔴 AUSENTE
     if (attendanceStatus === "absent") {
-
-      normalizedLate = {
-        isLate: false,
-        minutes: null
-      };
-
-      normalizedJustification = {
-        isJustified: justification?.isJustified ?? false,
-        certificateUrl: justification?.certificateUrl ?? null
+      normalizedLate = { isLate: false, minutes: null };
+      normalizedJustified = {
+        isJustified: justified?.isJustified ?? false,
+        certificateUrl: justified?.certificateUrl ?? null
       };
     }
 
@@ -232,101 +200,62 @@ async createAttendanceMassiveService({
     UPSERT
     ======================
     */
-
     operations.push({
       updateOne: {
-        filter,
+        filter: { studentId: studentObjectId, courseId: courseObjectId, academicYear, month },
         update: {
           $set: {
-            attendanceStatus,
-            attendanceType,
-            late: normalizedLate,
-            justification: normalizedJustification,
-            notes: notes ?? ""
+            [`records.${key}`]: {
+              status: attendanceStatus,
+              late: normalizedLate,
+              justified: normalizedJustified,
+              notes: notes ?? ""
+            }
           }
         },
         upsert: true
       }
     });
   }
+console.log("OPERATIONS:", operations.length);
 
   if (!operations.length) {
     return { message: "No hubo operaciones válidas" };
   }
 
   const result = await Attendance.bulkWrite(operations);
-
   return result;
 }
 /* ====================================
-  🔓 Obtener inasistencias de un curso por mes
+  🔓 Obtener solo attendance de un curso por mes
 ==================================== */
 async getByCourseFromMonthService(courseId, year, month) {
   if (!courseId || !year || !month) {
     throw new Error("Faltan parámetros");
   }
 
-  // 📅 Normalizar mes
-  month = parseInt(month).toString().padStart(2, "0");
+  const courseObjectId = new mongoose.Types.ObjectId(courseId);
+  const academicYear = parseInt(year);
+  const monthNumber = parseInt(month);
 
-  // 📅 Rangos string YYYY-MM-DD
-  const startDate = `${year}-${month}-01`;
-
-  const nextMonth = (parseInt(month) === 12)
-    ? `${parseInt(year) + 1}-01-01`
-    : `${year}-${(parseInt(month) + 1).toString().padStart(2, "0")}-01`;
-
-  const attendances = await Attendance.find({
-    courseId: new mongoose.Types.ObjectId(courseId),
-    academicYear: year,
-    date: {
-      $gte: startDate,
-      $lt: nextMonth
+  // 🔹 Traer solo studentId y records
+  const attendances = await Attendance.find(
+    {
+      courseId: courseObjectId,
+      academicYear,
+      month: monthNumber
+    },
+    {
+      studentId: 1,
+      records: 1,
+      _id: 0 // opcional, si no quieres el _id de Mongo
     }
-  }).lean();
+  ).lean();
 
-  if (!attendances.length) return [];
-
-  // 🧠 Mapa userId -> asistencias
-  const attendanceByUser = attendances.reduce((acc, a) => {
-    const key = a.userId.toString();
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(a);
-    return acc;
-  }, {});
-
-  const userIds = Object.keys(attendanceByUser);
-
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("nombre apellido dni")
-    .lean();
-
-  const result = users.map(u => {
-    const userAttendances = attendanceByUser[u._id.toString()] || [];
-
-    return {
-      _id: u._id,
-      name: `${u.apellido} ${u.nombre}`,
-      dni: u.dni,
-      presents: userAttendances.filter(a => a.attendanceStatus === "present").length,
-      absents: userAttendances.filter(a => a.attendanceStatus === "absent").length,
-      details: userAttendances.map(a => ({
-        date: a.date,
-        attendanceType : a.attendanceType,
-        trimester: a.trimester,
-        status: a.attendanceStatus,
-        notes: a.notes,
-        late: a.late,
-        justification: a.justification
-      }))
-    };
-  });
-
-  return result;
+  return attendances; // ya retorna [{ studentId, records }, ...]
 }
-
 /* ====================================
-  🔓 Obtener total de inasistencias por meses anteriores 
+  🔓 Obtener total de inasistencias por meses anteriores (solo IDs)
 ==================================== */
 async getCoursePreviousService(courseId, year, month) {
 
@@ -335,105 +264,64 @@ async getCoursePreviousService(courseId, year, month) {
   }
 
   const monthNumber = parseInt(month);
+  const academicYear = parseInt(year);
 
-  if (monthNumber <= 1) {
-    return []; // no hay meses anteriores
-  }
+  if (monthNumber <= 1) return []; // no hay meses anteriores
 
   const startMonth = 1;
   const endMonth = monthNumber - 1;
 
-  const startDate = `${year}-${String(startMonth).padStart(2, "0")}-01`;
-
-  const endDate = moment(`${year}-${String(endMonth).padStart(2, "0")}-01`)
-    .endOf("month")
-    .format("YYYY-MM-DD");
-
-  const aggregation = await Attendance.aggregate([
+  // 🔹 Traer documentos de meses anteriores
+  const attendances = await Attendance.find(
     {
-      $match: {
-        courseId: new mongoose.Types.ObjectId(courseId),
-        academicYear: year,
-        date: { $gte: startDate, $lte: endDate }
-      }
+      courseId: new mongoose.Types.ObjectId(courseId),
+      academicYear,
+      month: { $gte: startMonth, $lte: endMonth }
     },
     {
-      $addFields: {
-        absenceValue: {
-          $switch: {
-            branches: [
+      studentId: 1,
+      records: 1,
+      _id: 0 // opcional
+    }
+  ).lean();
 
-              // 🔴 REGULAR AUSENTE (NO JUSTIFICADO) = 1
-              {
-                case: {
-                  $and: [
-                    { $eq: ["$attendanceType", "regular"] },
-                    { $eq: ["$attendanceStatus", "absent"] },
-                    { $eq: ["$justification.isJustified", false] }
-                  ]
-                },
-                then: 1
-              },
+  if (!attendances.length) return [];
 
-              // 🟡 REGULAR PRESENTE TARDE = 0.25
-              {
-                case: {
-                  $and: [
-                    { $eq: ["$attendanceType", "regular"] },
-                    { $eq: ["$attendanceStatus", "present"] },
-                    { $eq: ["$late.isLate", true] }
-                  ]
-                },
-                then: 0.25
-              },
+  // 🧠 Mapa studentId -> acumulador de inasistencias ponderadas
+  const absencesByStudent = {};
 
-              // 🔴 EDUCACIÓN FÍSICA AUSENTE (NO JUSTIFICADO) = 0.5
-              {
-                case: {
-                  $and: [
-                    { $eq: ["$attendanceType", "physical_education"] },
-                    { $eq: ["$attendanceStatus", "absent"] },
-                    { $eq: ["$justification.isJustified", false] }
-                  ]
-                },
-                then: 0.5
-              }
+  for (const doc of attendances) {
+    const studentId = doc.studentId.toString();
+    if (!absencesByStudent[studentId]) absencesByStudent[studentId] = 0;
 
-            ],
-            default: 0
-          }
-        }
+    for (const [key, record] of Object.entries(doc.records || {})) {
+      const [, attendanceType] = key.split("_"); // "regular" o "physical_education"
+
+      // 🔴 Regular ausente no justificado = 1
+      if (attendanceType === "regular" && record.status === "absent" && !record.justified.isJustified) {
+        absencesByStudent[studentId] += 1;
       }
-    },
-    {
-      $group: {
-        _id: "$userId",
-        totalWeightedAbsences: { $sum: "$absenceValue" }
+
+      // 🟡 Regular presente tarde = 0.25
+      if (attendanceType === "regular" && record.status === "present" && record.late?.isLate) {
+        absencesByStudent[studentId] += 0.25;
       }
-    },
-    {
-      $lookup: {
-        from: "users",
-        localField: "_id",
-        foreignField: "_id",
-        as: "user"
-      }
-    },
-    { $unwind: "$user" },
-    {
-      $project: {
-        _id: 0,
-        userId: "$user._id",
-        name: "$user.nombre",
-        lastname: "$user.apellido",
-        totalWeightedAbsences: { $round: ["$totalWeightedAbsences", 2] }
+
+      // 🔴 Educación física ausente no justificado = 0.5
+      if (attendanceType === "physical_education" && record.status === "absent" && !record.justified.isJustified) {
+        absencesByStudent[studentId] += 0.5;
       }
     }
-  ]);
+  }
 
-  return aggregation;
+  // 🔹 Construir resultado final solo con studentId y totalWeightedAbsences
+  const result = Object.entries(absencesByStudent).map(([studentId, total]) => ({
+    studentId,
+    totalWeightedAbsences: Math.round(total * 100) / 100
+  }));
+
+  return result;
 }
-
   /* ====================================
      🔓 Obtener inasistencias de un alumno
      filters = { userId, ?, ?, academicYear? }

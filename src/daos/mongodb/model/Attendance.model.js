@@ -1,113 +1,52 @@
 import mongoose from "mongoose";
-
 const { Schema } = mongoose;
 
-const attendanceSchema = new Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  courseId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Course',
-    required: true
-  },
-  academicYear: {
-    type: String,
-    required: true
-  },
-  trimester: {
-    type: Number,
-    required: true,
-    min: 1,
-    max: 4
-  },
-  date: {
-    type: String,
-    required: true,
-    match: /^\d{4}-\d{2}-\d{2}$/  //YYYY-MM-DD
-  },
-
-  // 🔹 NUEVO CAMPO
-  attendanceType: {
-    type: String,
-    enum: ['regular', 'physical_education'],
-    required: true,
-    default: 'regular'
-  },
-
-  attendanceStatus: {
-    type: String,
-    enum: ['present', 'absent'],
-    required: true
-  },
-
+// 🔹 Registro de asistencia de un tipo de clase
+const dayRecordSchema = new Schema({
+  status: { type: String, enum: ['present', 'absent'], required: true },
   late: {
-    isLate: {
-      type: Boolean,
-      default: false
-    },
-     minutes: {
-      type: Number,
-      min: 1,
-      default: null
-    }
+    isLate: { type: Boolean, default: false },
+    minutes: { type: Number, min: 1, default: null }
   },
-
-  justification: {
-    isJustified: {
-      type: Boolean,
-      default: false
-    },
-    certificateUrl: {
-      type: String,
-      default: null
-    }
+  justified: {
+    isJustified: { type: Boolean, default: false },
+    certificateUrl: { type: String, default: null }
   },
+  notes: { type: String, default: '' }
+}, { _id: false });
 
-  notes: {
-    type: String,
-    default: ''
+const attendanceSchema = new Schema({
+  studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
+  academicYear: { type: Number, required: true },
+  month: { type: Number, required: true, min: 1, max: 12 },
+
+  // 🔹 Map: clave = "día_tipo" (ej: "15_regular", "15_physical_education")
+  records: {
+    type: Map,
+    of: dayRecordSchema,
+    default: {}
   }
-
 }, { timestamps: true });
 
-
-// 🔐 ÍNDICE ÚNICO ACTUALIZADO
+// 🔐 Índice único por alumno/curso/mes/año
 attendanceSchema.index(
-  {
-    userId: 1,
-    courseId: 1,
-    academicYear: 1,
-    trimester: 1,
-    date: 1,
-    attendanceType: 1
-  },
+  { studentId: 1, courseId: 1, academicYear: 1, month: 1 },
   { unique: true }
 );
 
-attendanceSchema.index({
-  courseId: 1,
-  academicYear: 1,
-  date: 1
-});
-
-// 🔒 VALIDACIÓN DE COHERENCIA
+// 🔒 Validación de coherencia
 attendanceSchema.pre("save", function(next) {
-
-  // Si es presente → no puede estar justificado
-  if (this.attendanceStatus === "present") {
-    this.justification.isJustified = false;
+  for (const [key, record] of this.records.entries()) {
+    if (record.status === 'present') {
+      record.justified.isJustified = false;
+    }
+    if (record.status === 'absent') {
+      record.late.isLate = false;
+      record.late.minutes = null;
+    }
   }
-
-  // Si es ausente → no puede estar tarde
-  if (this.attendanceStatus === "absent") {
-    this.late.isLate = false;
-    this.late.minutes = undefined;
-  }
-
   next();
 });
 
-export default mongoose.model("Attendance", attendanceSchema);
+export default mongoose.model("Attendance", attendanceSchema, "attendanceStudents");

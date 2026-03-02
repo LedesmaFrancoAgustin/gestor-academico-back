@@ -65,51 +65,36 @@ export default class AttendanceController {
   };
 
   // 🔒 Crear / Actualizar / Borrar asistencia MASIVA
-createAttendanceMassive = async (req, res, next) => {
-    try {
-      const {
-        courseId,
-        academicYear,
-        trimester,
-        attendanceType = "regular", // 👈 NUEVO
-        changes
-      } = req.body;
+  createAttendanceMassive = async (req, res, next) => {
+      try {
+        const {courseId, academicYear, month, changes } = req.body;
 
-      console.log("courseId:", courseId);
-      console.log("academicYear:", academicYear);
-      console.log("trimester:", trimester);
-      console.log("attendanceType:", attendanceType);
-      console.log("changes:", changes);
+        console.log("courseId:", courseId);
+        console.log("academicYear:", academicYear);
+        console.log("month:", month);
+        //console.log("changes:", changes);
 
-      // 🔒 Validaciones base
-      if (
-        !courseId ||
-        !academicYear ||
-        !trimester ||
-        !attendanceType ||
-        !Array.isArray(changes)
-      ) {
-        return createResponse(res, 400, null, "Datos inválidos");
+        // 🔒 Validaciones base
+        if (!courseId || !academicYear || !Array.isArray(changes)) {
+          return createResponse(res, 400, null, "Datos inválidos");
+        }
+
+        if (!month || month < 1 || month > 12) {
+          return createResponse(res, 400, null, "Mes inválido");
+        }
+
+        if (changes.length === 0) {
+          return createResponse(res, 400, null, "No hay cambios para guardar");
+        }
+
+        const result = await this.service.createAttendanceMassiveService({courseId, academicYear, month,changes});
+
+        return createResponse(res, 200, result, "Asistencia guardada correctamente");
+
+      } catch (error) {
+        next(error);
       }
-
-      if (changes.length === 0) {
-        return createResponse(res, 400, null, "No hay cambios para guardar");
-      }
-
-      const result = await this.service.createAttendanceMassiveService({
-        courseId,
-        academicYear,
-        trimester,
-        attendanceType, // 👈 AHORA SE ENVÍA
-        changes
-      });
-
-      return createResponse(res, 200, result, "Asistencia guardada correctamente");
-
-    } catch (error) {
-      next(error);
-    }
-};
+  };
 
 
   // 🔓 Obtener inasistencias de un curso por mes
@@ -134,6 +119,7 @@ createAttendanceMassive = async (req, res, next) => {
         return createResponse(res, 400, null, "Mes inválido");
       }
 
+      // 🔹 Llamada al service
       const records = await this.service.getByCourseFromMonthService(
         courseId,
         year,
